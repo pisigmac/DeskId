@@ -544,17 +544,17 @@ pip install opendesk-auth
 
 <span class="code-cm"># 3. Start high-performance uvicorn engine</span>
 opendesk-auth
-<span class="code-cm"># Health check: http://127.0.0.1:8090/health</span>
+<span class="code-cm"># Health check: /health</span>
         </div>
         <div class="code-panel" id="code-sdk" style="display:none;">
 <span class="code-kw">import</span> { OpenDeskAuth } <span class="code-kw">from</span> <span class="code-str">'./client'</span>;
 
-<span class="code-kw">const</span> auth = <span class="code-kw">new</span> OpenDeskAuth({ baseUrl: <span class="code-str">'https://auth.opendesk.local'</span> });
+<span class="code-kw">const</span> auth = <span class="code-kw">new</span> OpenDeskAuth({ baseUrl: window.location.origin });
 
 <span class="code-cm">// Authenticate user and receive RS256 JWT tokens</span>
 <span class="code-kw">const</span> session = <span class="code-kw">await</span> auth.login({
-  email: <span class="code-str">'operator@example.com'</span>,
-  password: <span class="code-str">'SecretPass123!'</span>
+  email: userEmail,
+  password: userPassword,
 });
 
 console.log(<span class="code-str">'Issued JWT Access Token:'</span>, session.data.access_token);

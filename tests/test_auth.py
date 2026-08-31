@@ -360,6 +360,98 @@ def test_rate_limiter_allows_and_blocks():
     assert limiter.is_allowed("192.0.2.2", "login") is True
 
 
+def test_rate_limiter_flag_disabled(client, monkeypatch):
+    from opendesk_auth.config import get_settings
+    from opendesk_auth.rate_limit import RateLimiter
+
+    monkeypatch.setenv("AUTH_RATE_LIMIT_ENABLED", "false")
+    get_settings.cache_clear()
+    settings = get_settings()
+    limiter = RateLimiter(settings)
+
+    # When disabled, requests far exceeding the limit are always allowed
+    for _ in range(50):
+        assert limiter.is_allowed("192.0.2.1", "login") is True
+
+    get_settings.cache_clear()
+
+
+def test_db_backed_rate_limiter_multi_worker_consistency(client, monkeypatch):
+    from opendesk_auth.config import get_settings
+    from opendesk_auth.rate_limit import RateLimiter
+
+    monkeypatch.setenv("AUTH_RATE_LIMIT_BACKEND", "db")
+    get_settings.cache_clear()
+    settings = get_settings()
+
+    # Simulate Worker 1 and Worker 2 as distinct process instances sharing DB
+    worker1 = RateLimiter(settings)
+    worker2 = RateLimiter(settings)
+
+    # Worker 1 takes half the quota
+    for _ in range(settings.rate_limit_login // 2):
+        assert worker1.is_allowed("198.51.100.1", "login") is True
+
+    # Worker 2 takes the remaining half
+    remaining = settings.rate_limit_login - (settings.rate_limit_login // 2)
+    for _ in range(remaining):
+        assert worker2.is_allowed("198.51.100.1", "login") is True
+
+    # Next attempt from either worker must be blocked because DB state is shared
+    assert worker1.is_allowed("198.51.100.1", "login") is False
+    assert worker2.is_allowed("198.51.100.1", "login") is False
+
+    get_settings.cache_clear()
+
+
+def test_redis_backed_rate_limiter_allows_and_blocks(monkeypatch):
+    import os
+    import uuid
+    from datetime import datetime, timezone
+    import redis
+    from opendesk_auth.config import get_settings
+    from opendesk_auth.rate_limit import RateLimiter
+
+    redis_url = os.environ.get("AUTH_RATE_LIMIT_REDIS_URL") or "redis://127.0.0.1:6379/0"
+    try:
+        r = redis.Redis.from_url(redis_url, socket_timeout=1.0)
+        r.ping()
+    except Exception:
+        # If redis is not reachable in this test runner environment, skip
+        import pytest
+        pytest.skip("Local redis server not reachable")
+
+    test_ip = f"client-id-{uuid.uuid4().hex[:8]}"
+    r.delete(f"rl:login:{test_ip}")
+
+    monkeypatch.setenv("AUTH_RATE_LIMIT_BACKEND", "redis")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_URL", redis_url)
+    get_settings.cache_clear()
+    settings = get_settings()
+
+    worker1 = RateLimiter(settings)
+    worker2 = RateLimiter(settings)
+
+    # Worker 1 consumes first half
+    for _ in range(settings.rate_limit_login // 2):
+        assert worker1.is_allowed(test_ip, "login") is True
+
+    # Worker 2 consumes remaining quota
+    remaining = settings.rate_limit_login - (settings.rate_limit_login // 2)
+    for _ in range(remaining):
+        assert worker2.is_allowed(test_ip, "login") is True
+
+    # Limit reached across workers: both must be blocked
+    assert worker1.is_allowed(test_ip, "login") is False
+    assert worker2.is_allowed(test_ip, "login") is False
+
+    # Clean up test key
+    r.delete(f"rl:login:{test_ip}")
+    get_settings.cache_clear()
+
+
+
+
 # ---------------------------------------------------------------------------
 # Task 9 — email verification endpoint
 # ---------------------------------------------------------------------------

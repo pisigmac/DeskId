@@ -78,8 +78,13 @@ class Settings(BaseSettings):
     # Mail service integration — empty means email features are disabled.
     mail_base_url: str = ""
     mail_api_key: str = ""
+    mail_from_email: str = ""
+    mail_from_name: str = ""
 
     # Rate limiting (policy defaults).
+    rate_limit_enabled: bool = True
+    rate_limit_backend: str = "memory"  # memory | db | redis
+    rate_limit_redis_url: str = ""
     rate_limit_login: int = 10
     rate_limit_login_window_seconds: int = 60
     rate_limit_register: int = 10

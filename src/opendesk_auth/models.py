@@ -170,3 +170,12 @@ class OAuthState(Base):
     provider: Mapped[str] = mapped_column(String(32))
     redirect_uri: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class RateLimitEntry(Base):
+    __tablename__ = "rate_limit_entries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    key: Mapped[str] = mapped_column(String(255), index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+

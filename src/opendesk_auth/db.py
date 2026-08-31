@@ -39,6 +39,20 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
 
 
+from contextlib import contextmanager
+
+
+@contextmanager
+def get_db_session() -> Generator[Session, None, None]:
+    get_engine()
+    assert _SessionLocal is not None
+    session = _SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
 def get_db() -> Generator[Session, None, None]:
     get_engine()
     assert _SessionLocal is not None

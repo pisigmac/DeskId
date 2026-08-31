@@ -2,8 +2,8 @@
  * Typed client for OpenDesk Auth Service (FastAPI / Python backend).
  *
  * Usage:
- *   const auth = new OpenDeskAuth({ baseUrl: 'http://127.0.0.1:8090' })
- *   const result = await auth.login({ email: 'user@example.com', password: 'secret' })
+ *   const auth = new OpenDeskAuth({ baseUrl: process.env.AUTH_ISSUER })
+ *   const result = await auth.login({ email: userEmail, password: userPassword })
  */
 
 export type AuthClientOptions = {

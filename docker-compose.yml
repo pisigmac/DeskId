@@ -10,6 +10,13 @@ services:
     volumes:
       - auth_pg:/var/lib/postgresql/data
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - auth_redis:/data
+
   auth:
     build: .
     ports:
@@ -19,8 +26,11 @@ services:
       AUTH_ISSUER: ${AUTH_ISSUER:-https://auth.opendeskauth.local}
       AUTH_HOST: 0.0.0.0
       AUTH_PORT: 8090
-      AUTH_CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,http://localhost:8787,http://localhost:8090
-      AUTH_SPA_CALLBACK_URL: http://localhost:5173/auth/callback
+      AUTH_RATE_LIMIT_ENABLED: ${AUTH_RATE_LIMIT_ENABLED:-true}
+      AUTH_RATE_LIMIT_BACKEND: ${AUTH_RATE_LIMIT_BACKEND:-memory}
+      AUTH_RATE_LIMIT_REDIS_URL: ${AUTH_RATE_LIMIT_REDIS_URL:-redis://redis:6379/0}
+      AUTH_CORS_ORIGINS: ${AUTH_CORS_ORIGINS:-}
+      AUTH_SPA_CALLBACK_URL: ${AUTH_SPA_CALLBACK_URL:-}
       AUTH_OPEN_REGISTRATION: ${AUTH_OPEN_REGISTRATION:-false}
       AUTH_BOOTSTRAP_TOKEN: ${AUTH_BOOTSTRAP_TOKEN:-}
       AUTH_JWT_PRIVATE_KEY_FILE: /run/secrets/auth_private.pem
@@ -37,6 +47,9 @@ services:
       - ${AUTH_JWT_PUBLIC_KEY_FILE:-./public.pem}:/run/secrets/auth_public.pem:ro
     depends_on:
       - db
+      - redis
 
 volumes:
   auth_pg:
+  auth_redis:
+

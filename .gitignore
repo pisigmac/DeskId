@@ -31,8 +31,9 @@ public.pem
 *.sqlite
 *.sqlite3
 
-# Environment
+# Environment & Logs
 .env
 .env.local
+*.log
 .superpowers
 docs/superpowers

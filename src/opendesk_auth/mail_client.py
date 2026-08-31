@@ -13,26 +13,40 @@ def build_verification_email(to: str, token: str) -> dict[str, Any]:
     settings = get_settings()
     base_url = settings.spa_callback_url.rsplit("/", 1)[0]  # strip path component
     link = f"{base_url}/verify-email?token={token}"
-    return {
+    payload: dict[str, Any] = {
         "to": to,
         "subject": "Verify your OpenDesk Auth account",
         "text": f"Please verify your email by visiting: {link}",
         "html": f'<p>Please <a href="{link}">verify your email</a>.</p>',
         "tags": ["auth", "verify-email"],
     }
+    if settings.mail_from_email:
+        payload["from"] = (
+            f"{settings.mail_from_name} <{settings.mail_from_email}>"
+            if settings.mail_from_name
+            else settings.mail_from_email
+        )
+    return payload
 
 
 def build_password_reset_email(to: str, token: str) -> dict[str, Any]:
     settings = get_settings()
     base_url = settings.spa_callback_url.rsplit("/", 1)[0]
     link = f"{base_url}/reset-password?token={token}"
-    return {
+    payload: dict[str, Any] = {
         "to": to,
         "subject": "Reset your OpenDesk Auth password",
         "text": f"Reset your password by visiting: {link}",
         "html": f'<p><a href="{link}">Reset your password</a>.</p>',
         "tags": ["auth", "reset-password"],
     }
+    if settings.mail_from_email:
+        payload["from"] = (
+            f"{settings.mail_from_name} <{settings.mail_from_email}>"
+            if settings.mail_from_name
+            else settings.mail_from_email
+        )
+    return payload
 
 
 def send_mail(payload: dict[str, Any]) -> dict[str, Any]:

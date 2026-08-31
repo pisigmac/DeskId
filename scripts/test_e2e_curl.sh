@@ -7,11 +7,23 @@
 # the server process on completion (or on failure/SIGINT).
 # ==============================================================================
 
-set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Load environment configuration
+if [ -f "${ROOT_DIR}/.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "${ROOT_DIR}/.env"
+    set +a
+fi
 
 # Configuration
 TEST_PORT="${AUTH_PORT:-8099}"
-TEST_HOST="${AUTH_HOST:-127.0.0.1}"
+TEST_HOST="${AUTH_HOST:-}"
+if [ -z "${TEST_HOST}" ]; then
+    TEST_HOST="127.0.0.1"
+fi
 BASE_URL="http://${TEST_HOST}:${TEST_PORT}"
 TMP_DIR="$(mktemp -d /tmp/opendesk_e2e.XXXXXX)"
 DB_PATH="${TMP_DIR}/test.db"
@@ -142,7 +154,7 @@ assert_status 200 "${CONSOLE_CODE}" "GET /admin/console"
 # 3. User Registration & Authentication Flow
 # ------------------------------------------------------------------------------
 log_step "Testing POST /v1/auth/register (First Admin with Bootstrap Token)..."
-ADMIN_EMAIL="admin@example.com"
+ADMIN_EMAIL="admin-test-${RANDOM}@auth.test"
 ADMIN_PASS="AdminSecret123!"
 
 REG_RES=$(curl -s -w "\n%{http_code}" -X POST "${BASE_URL}/v1/auth/register" \
