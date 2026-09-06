@@ -87,8 +87,9 @@ class AddMemberRequest(BaseModel):
 class GrantRequest(BaseModel):
     user_id: str
     audience: str
-    role: str
+    role: str | None = None
     org_id: str | None = None
+
 
 
 class IntrospectRequest(BaseModel):

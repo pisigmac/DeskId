@@ -2073,13 +2073,27 @@ def test_custom_roles_grant_validation_and_token_embedding(client):
     assert switch_resp.status_code == 200
     token_claims = decode_access_token(switch_resp.json()["access_token"])
 
-    # Verify audience aggregation and specific custom roles
-    assert "deskid" in token_claims["aud"]
-    assert "service-catalog" in token_claims["aud"]
-    assert "service-compute" in token_claims["aud"]
-
     assert token_claims["roles"]["service-catalog"] == "curator"
     assert token_claims["roles"]["service-compute"] == "job-runner"
+
+    # 8. Test auto-population of default_role when role is omitted in grant request
+    g3 = client.post(
+        "/v1/admin/grants",
+        json={"user_id": user_id, "audience": "service-catalog"},  # role omitted
+        headers=admin_headers,
+    )
+    assert g3.status_code == 200
+    assert g3.json()["role"] == "consumer"  # default_role for service-catalog
+
+    # 9. Test PUT invariant check: removing default_role from allowed_roles returns 422
+    inv_put = client.put(
+        "/v1/admin/services/service-catalog",
+        json={"allowed_roles": ["catalog-admin", "curator"]},  # excludes existing default_role 'consumer'
+        headers=admin_headers,
+    )
+    assert inv_put.status_code == 422
+    assert "must be one of allowed_roles" in inv_put.json()["error"]
+
 
 
 

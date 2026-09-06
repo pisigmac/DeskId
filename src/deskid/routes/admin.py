@@ -105,14 +105,23 @@ def set_grant(
         raise HTTPException(status_code=404, detail="User not found")
 
     svc = db.query(ServiceDefinition).filter(ServiceDefinition.id == body.audience).one_or_none()
+    assigned_role = body.role or (svc.default_role if svc else None)
+    if not assigned_role:
+        if svc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Role is required for service '{body.audience}' as no default_role is defined",
+            )
+        raise HTTPException(status_code=400, detail="Role is required")
+
     if svc:
-        if body.role not in svc.allowed_roles:
+        if assigned_role not in svc.allowed_roles:
             raise HTTPException(
                 status_code=422,
-                detail=f"Role '{body.role}' is not allowed for service '{body.audience}'. Allowed roles: {svc.allowed_roles}",
+                detail=f"Role '{assigned_role}' is not allowed for service '{body.audience}'. Allowed roles: {svc.allowed_roles}",
             )
     else:
-        if body.role not in {"admin", "operator", "viewer"}:
+        if assigned_role not in {"admin", "operator", "viewer"}:
             raise HTTPException(status_code=400, detail="Invalid role")
 
     grant = (
@@ -125,9 +134,9 @@ def set_grant(
         .one_or_none()
     )
     if grant:
-        grant.role = body.role
+        grant.role = assigned_role
     else:
-        db.add(ProductGrant(user_id=body.user_id, org_id=body.org_id, audience=body.audience, role=body.role))
+        db.add(ProductGrant(user_id=body.user_id, org_id=body.org_id, audience=body.audience, role=assigned_role))
     db.commit()
     ctx = get_request_context()
     emit_audit(
@@ -139,10 +148,11 @@ def set_grant(
         resource_id=body.user_id,
         ip_address=ctx.get("ip"),
         user_agent=ctx.get("user_agent"),
-        details={"audience": body.audience, "role": body.role, "org_id": body.org_id},
+        details={"audience": body.audience, "role": assigned_role, "org_id": body.org_id},
     )
-    logger.info("admin.set_grant admin=%s user=%s audience=%s role=%s org=%s", admin.id, body.user_id, body.audience, body.role, body.org_id)
-    return {"ok": True, "user_id": body.user_id, "audience": body.audience, "role": body.role}
+    logger.info("admin.set_grant admin=%s user=%s audience=%s role=%s org=%s", admin.id, body.user_id, body.audience, assigned_role, body.org_id)
+    return {"ok": True, "user_id": body.user_id, "audience": body.audience, "role": assigned_role}
+
 
 
 
@@ -358,9 +368,15 @@ def update_service(
     if body.allowed_roles is not None:
         svc.allowed_roles = body.allowed_roles
     if body.default_role is not None:
-        if body.default_role not in svc.allowed_roles:
-            raise HTTPException(status_code=422, detail="default_role must be one of allowed_roles")
         svc.default_role = body.default_role
+
+    # Invariant: default_role (if defined) must be present in allowed_roles
+    if svc.default_role and svc.default_role not in svc.allowed_roles:
+        raise HTTPException(
+            status_code=422,
+            detail=f"default_role '{svc.default_role}' must be one of allowed_roles: {svc.allowed_roles}",
+        )
+
 
     db.commit()
     db.refresh(svc)
