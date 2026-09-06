@@ -26,11 +26,30 @@ from deskid.models import Base
 
 
 def _split_sql(statements: str) -> list[str]:
-    """Split SQL on semicolons, ignoring empty statements and line comments."""
+    """Split SQL on semicolons while respecting $$...$$ blocks and stripping comments."""
     # Strip line comments
     cleaned = re.sub(r"--.*?\n", "\n", statements)
-    parts = [p.strip() for p in cleaned.split(";")]
-    return [p for p in parts if p]
+    statements_list = []
+    current: list[str] = []
+    in_dollar_quote = False
+
+    for token in re.split(r"(\$\$|;)", cleaned):
+        if token == "$$":
+            in_dollar_quote = not in_dollar_quote
+            current.append(token)
+        elif token == ";" and not in_dollar_quote:
+            stmt = "".join(current).strip()
+            if stmt:
+                statements_list.append(stmt)
+            current = []
+        else:
+            current.append(token)
+
+    remainder = "".join(current).strip()
+    if remainder:
+        statements_list.append(remainder)
+
+    return statements_list
 
 
 def run_migrations() -> None:

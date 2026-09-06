@@ -450,6 +450,29 @@ def test_redis_backed_rate_limiter_allows_and_blocks(monkeypatch):
     get_settings.cache_clear()
 
 
+def test_rate_limiter_fail_closed_mode(monkeypatch):
+    from deskid.config import get_settings
+    from deskid.rate_limit import RateLimiter
+
+    monkeypatch.setenv("AUTH_DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("AUTH_ISSUER", "https://auth.test.local")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_BACKEND", "redis")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_URL", "redis://127.0.0.1:1/0")  # unreachable port / connection failure
+    monkeypatch.setenv("AUTH_RATE_LIMIT_FAIL_CLOSED", "true")
+    get_settings.cache_clear()
+    settings = get_settings()
+
+    limiter = RateLimiter(settings)
+    # When fail-closed is True, an unreachable redis backend should reject/block the request
+    assert limiter.is_allowed("192.168.1.1", "login") is False
+
+    # When fail-closed is False, fallback to memory should allow initial requests
+    monkeypatch.setenv("AUTH_RATE_LIMIT_FAIL_CLOSED", "false")
+    get_settings.cache_clear()
+    settings_fail_open = get_settings()
+    limiter_open = RateLimiter(settings_fail_open)
+    assert limiter_open.is_allowed("192.168.1.1", "login") is True
+    get_settings.cache_clear()
 
 
 # ---------------------------------------------------------------------------
@@ -673,16 +696,28 @@ def test_user_can_export_own_data(client):
 # ---------------------------------------------------------------------------
 
 def test_user_can_delete_own_account(client):
+    from deskid.db import get_engine
+    from deskid.models import Org
+    from sqlalchemy.orm import Session
+    from deskid.crypto import decode_access_token
+
     tokens = client.post("/v1/auth/register", json={
         "email": "delete@example.com",
         "password": "password123",
     }).json()
+    org_id = decode_access_token(tokens["access_token"])["org_id"]
+
     r = client.post("/v1/me/delete", headers={"Authorization": f"Bearer {tokens['access_token']}"})
     assert r.status_code == 200
     assert r.json()["ok"] is True
 
     login = client.post("/v1/auth/login", json={"email": "delete@example.com", "password": "password123"})
     assert login.status_code == 401
+
+    # Check that the orphan org was also deleted from DB
+    session = Session(get_engine())
+    assert session.get(Org, org_id) is None
+    session.close()
 
 
 # ---------------------------------------------------------------------------
@@ -715,6 +750,53 @@ def test_introspect_with_valid_key(client, monkeypatch):
     )
     assert r.status_code == 200
     assert r.json()["active"] is True
+    get_settings.cache_clear()
+
+
+def test_introspect_returns_inactive_for_suspended_or_deleted_user(client, monkeypatch):
+    monkeypatch.setenv("AUTH_INTROSPECTION_API_KEY", "secret-key")
+    from deskid.config import get_settings
+    get_settings.cache_clear()
+
+    admin = client.post("/v1/auth/register", json={
+        "email": "introspect_admin@example.com",
+        "password": "password123",
+    }).json()
+    user = client.post("/v1/auth/register", json={
+        "email": "to_suspend@example.com",
+        "password": "password123",
+    }).json()
+
+    # Active user token is active
+    r1 = client.post(
+        "/introspect",
+        json={"token": user["access_token"]},
+        headers={"Authorization": "Bearer secret-key"},
+    )
+    assert r1.status_code == 200
+    assert r1.json()["active"] is True
+
+    # Suspend user via admin endpoint
+    user_id = client.get(
+        "/v1/auth/me",
+        headers={"Authorization": f"Bearer {user['access_token']}"},
+    ).json()["id"]
+
+    client.patch(
+        f"/v1/admin/users/{user_id}/active",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={"is_active": False},
+    )
+
+    # Introspect should now report active: false immediately
+    r2 = client.post(
+        "/introspect",
+        json={"token": user["access_token"]},
+        headers={"Authorization": "Bearer secret-key"},
+    )
+    assert r2.status_code == 200
+    assert r2.json()["active"] is False
+    assert r2.json()["claims"] is None
     get_settings.cache_clear()
 
 
@@ -1515,12 +1597,22 @@ def test_audit_is_append_only_and_hashed(client):
     from sqlalchemy.orm import Session
 
     admin = client.post("/v1/auth/register", json={"email": "audhash@example.com", "password": "password123"}).json()
-    r = client.get("/v1/admin/audit?limit=1", headers={"Authorization": f"Bearer {admin['access_token']}"})
+    # Trigger another audit event by logging in
+    client.post(
+        "/v1/auth/login",
+        json={"email": "audhash@example.com", "password": "password123"},
+    )
+
+    r = client.get("/v1/admin/audit?limit=10", headers={"Authorization": f"Bearer {admin['access_token']}"})
     assert r.status_code == 200
-    event = r.json()["events"][0]
-    assert event["integrity_hash"]
+    events = r.json()["events"]
+    assert len(events) >= 2
+    # events are ordered desc by occurred_at, so events[0] is newest and events[1] is older
+    assert events[0]["integrity_hash"]
+    assert events[0]["previous_hash"] == events[1]["integrity_hash"]
+
     session = Session(get_engine())
-    row = session.get(AuditLogEvent, event["id"])
+    row = session.get(AuditLogEvent, events[0]["id"])
     try:
         row.action = "tamper"
         session.commit()
@@ -1530,3 +1622,478 @@ def test_audit_is_append_only_and_hashed(client):
         session.rollback()
     finally:
         session.close()
+
+
+def test_jwks_rotation_and_historical_keys(monkeypatch):
+    import json
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from deskid.config import get_settings
+    from deskid.crypto import decode_access_token, public_jwks, _ensure_keys
+    from fastapi.testclient import TestClient
+    from deskid.app import create_app
+
+    # Generate old key pair
+    old_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    old_priv_pem = old_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode()
+    old_pub_pem = old_key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+
+    # Generate current key pair
+    new_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    new_priv_pem = new_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode()
+    new_pub_pem = new_key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+
+    # Configure server with new active key and old key in previous_keys
+    prev_keys_json = json.dumps([{"kid": "deskid-old-1", "public_key": old_pub_pem}])
+    monkeypatch.setenv("AUTH_DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("AUTH_ISSUER", "https://auth.test.local")
+    monkeypatch.setenv("AUTH_JWT_PRIVATE_KEY", new_priv_pem)
+    monkeypatch.setenv("AUTH_JWT_PUBLIC_KEY", new_pub_pem)
+    monkeypatch.setenv("AUTH_JWT_KID", "deskid-new-2")
+    monkeypatch.setenv("AUTH_JWT_PREVIOUS_PUBLIC_KEYS", prev_keys_json)
+    get_settings.cache_clear()
+    _ensure_keys.cache_clear()
+
+    # Sign a token with the OLD private key and kid deskid-old-1
+    old_token = jwt.encode(
+        {"sub": "user_old", "email": "old@example.com", "iss": "https://auth.test.local", "aud": ["deskid"]},
+        old_priv_pem,
+        algorithm="RS256",
+        headers={"kid": "deskid-old-1"},
+    )
+
+    # Server should successfully decode the old token
+    decoded = decode_access_token(old_token)
+    assert decoded["sub"] == "user_old"
+
+    # JWKS endpoint should advertise both keys
+    app = create_app()
+    with TestClient(app) as test_client:
+        jwks_resp = test_client.get("/.well-known/jwks.json")
+        assert jwks_resp.status_code == 200
+        keys = jwks_resp.json()["keys"]
+        assert len(keys) == 2
+        kids = [k["kid"] for k in keys]
+        assert "deskid-new-2" in kids
+        assert "deskid-old-1" in kids
+
+    get_settings.cache_clear()
+    _ensure_keys.cache_clear()
+
+
+def test_switch_org_scoping_and_forbidden(client):
+    from deskid.crypto import decode_access_token
+
+    # 1. Register user
+    reg = client.post(
+        "/v1/auth/register",
+        json={"email": "orgswitcher@example.com", "password": "password123"},
+    ).json()
+    token_1 = reg["access_token"]
+    claims_1 = decode_access_token(token_1)
+    org_1_id = claims_1["org_id"]
+    assert org_1_id is not None
+
+    # 2. Create second org
+    org_2_resp = client.post(
+        "/v1/orgs",
+        json={"name": "Second Org", "slug": "second-org"},
+        headers={"Authorization": f"Bearer {token_1}"},
+    )
+    assert org_2_resp.status_code == 200
+    org_2_id = org_2_resp.json()["id"]
+    assert org_2_id != org_1_id
+
+    # 3. Switch org to second org
+    switch_resp = client.post(
+        "/v1/auth/switch-org",
+        json={"org_id": org_2_id},
+        headers={"Authorization": f"Bearer {token_1}"},
+    )
+    assert switch_resp.status_code == 200
+    token_2 = switch_resp.json()["access_token"]
+    claims_2 = decode_access_token(token_2)
+    assert claims_2["org_id"] == org_2_id
+    assert claims_2["workspace_id"] == org_2_id
+
+    # 4. Attempt to switch to an unauthorized random org ID
+    unauth_resp = client.post(
+        "/v1/auth/switch-org",
+        json={"org_id": "00000000-0000-0000-0000-000000000000"},
+        headers={"Authorization": f"Bearer {token_2}"},
+    )
+    assert unauth_resp.status_code == 403
+
+
+def test_org_scoped_product_grants(client):
+    from deskid.crypto import decode_access_token
+
+    # 1. Register admin
+    admin = client.post(
+        "/v1/auth/register",
+        json={"email": "grantadmin@example.com", "password": "password123"},
+    ).json()
+    admin_token = admin["access_token"]
+
+    # 2. Register target user
+    user = client.post(
+        "/v1/auth/register",
+        json={"email": "targetuser@example.com", "password": "password123"},
+    ).json()
+    user_token = user["access_token"]
+    user_claims = decode_access_token(user_token)
+    org_1_id = user_claims["org_id"]
+
+    # 3. Create second org for target user
+    org_2_resp = client.post(
+        "/v1/orgs",
+        json={"name": "Org Beta"},
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    org_2_id = org_2_resp.json()["id"]
+
+    # 4. Admin grants user role "admin" on "keppler" in org_1, and role "viewer" on "keppler" in org_2
+    g1 = client.post(
+        "/v1/admin/grants",
+        json={"user_id": user_claims["sub"], "audience": "keppler", "role": "admin", "org_id": org_1_id},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert g1.status_code == 200
+
+    g2 = client.post(
+        "/v1/admin/grants",
+        json={"user_id": user_claims["sub"], "audience": "keppler", "role": "viewer", "org_id": org_2_id},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert g2.status_code == 200
+
+    # 5. Switch to Org 1 -> token roles["keppler"] must be "admin"
+    t1_resp = client.post(
+        "/v1/auth/switch-org",
+        json={"org_id": org_1_id},
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert t1_resp.status_code == 200
+    claims_org1 = decode_access_token(t1_resp.json()["access_token"])
+    assert claims_org1["roles"]["keppler"] == "admin"
+
+    # 6. Switch to Org 2 -> token roles["keppler"] must be "viewer"
+    t2_resp = client.post(
+        "/v1/auth/switch-org",
+        json={"org_id": org_2_id},
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert t2_resp.status_code == 200
+    claims_org2 = decode_access_token(t2_resp.json()["access_token"])
+    assert claims_org2["roles"]["keppler"] == "viewer"
+
+
+def test_token_version_invalidation_on_password_change(client, monkeypatch):
+    monkeypatch.setenv("AUTH_INTROSPECTION_API_KEY", "secret-key")
+    from deskid.config import get_settings
+    get_settings.cache_clear()
+
+    # 1. Register user
+    reg = client.post(
+        "/v1/auth/register",
+        json={"email": "versionuser@example.com", "password": "oldpassword123"},
+    ).json()
+    old_token = reg["access_token"]
+
+    # 2. Introspect old token -> active
+    intro1 = client.post(
+        "/introspect",
+        json={"token": old_token},
+        headers={"Authorization": "Bearer secret-key"},
+    )
+    assert intro1.status_code == 200
+    assert intro1.json()["active"] is True
+
+    # 3. User changes password (bumps token_version)
+    chg = client.post(
+        "/v1/auth/me/change-password",
+        json={"current_password": "oldpassword123", "new_password": "newpassword123"},
+        headers={"Authorization": f"Bearer {old_token}"},
+    )
+    assert chg.status_code == 200
+
+    # 4. Old token introspect -> active: False due to token_version mismatch
+    intro2 = client.post(
+        "/introspect",
+        json={"token": old_token},
+        headers={"Authorization": "Bearer secret-key"},
+    )
+    assert intro2.status_code == 200
+    assert intro2.json()["active"] is False
+
+
+def test_reconciliation_events_feed(client):
+    # 1. Register admin
+    admin = client.post(
+        "/v1/auth/register",
+        json={"email": "feedadmin@example.com", "password": "password123"},
+    ).json()
+    admin_token = admin["access_token"]
+
+    # 2. Create org
+    client.post(
+        "/v1/orgs",
+        json={"name": "Recon Org"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    # 3. Query reconciliation feed
+    resp = client.get(
+        "/v1/admin/reconciliation/events?limit=50",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "events" in data
+    assert len(data["events"]) >= 2
+    actions = [e["action"] for e in data["events"]]
+    assert "user.register" in actions
+    assert "org.create" in actions
+
+
+def test_audit_chain_verifier_script(client):
+    import subprocess
+    from deskid.db import get_engine
+
+    # 1. Register admin to populate audit events
+    admin = client.post(
+        "/v1/auth/register",
+        json={"email": "verifier@example.com", "password": "password123"},
+    ).json()
+    client.post(
+        "/v1/orgs",
+        json={"name": "Verified Org"},
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+    )
+
+    # 2. Export audit log to JSON
+    events_resp = client.get(
+        "/v1/admin/reconciliation/events",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+    )
+    assert events_resp.status_code == 200
+
+    import tempfile
+    with tempfile.NamedTemporaryFile("w+", suffix=".json") as tmp:
+        import json
+        json.dump(events_resp.json()["events"], tmp)
+        tmp.flush()
+
+        res = subprocess.run(
+            ["python3", "scripts/verify_audit_chain.py", "--file", tmp.name],
+            capture_output=True,
+            text=True,
+        )
+        assert res.returncode == 0
+        assert "VERIFICATION SUCCESS" in res.stdout
+
+
+def test_service_definition_crud(client):
+    admin = client.post(
+        "/v1/auth/register",
+        json={"email": "svcadmin@example.com", "password": "password123"},
+    ).json()
+    admin_headers = {"Authorization": f"Bearer {admin['access_token']}"}
+
+    regular_user = client.post(
+        "/v1/auth/register",
+        json={"email": "regular@example.com", "password": "password123"},
+    ).json()
+    user_headers = {"Authorization": f"Bearer {regular_user['access_token']}"}
+
+    # 1. Non-admin cannot register service (403)
+    non_admin_reg = client.post(
+        "/v1/admin/services",
+        json={"id": "service-alpha", "name": "Service Alpha", "allowed_roles": ["admin", "viewer"]},
+        headers=user_headers,
+    )
+    assert non_admin_reg.status_code == 403
+
+    # 2. Admin registers service
+    reg_resp = client.post(
+        "/v1/admin/services",
+        json={
+            "id": "service-alpha",
+            "name": "Service Alpha",
+            "description": "Alpha description",
+            "allowed_roles": ["catalog-admin", "schema-manager", "data-reader"],
+            "default_role": "data-reader",
+        },
+        headers=admin_headers,
+    )
+    assert reg_resp.status_code == 201
+    svc_data = reg_resp.json()
+    assert svc_data["id"] == "service-alpha"
+    assert svc_data["name"] == "Service Alpha"
+    assert svc_data["allowed_roles"] == ["catalog-admin", "schema-manager", "data-reader"]
+    assert svc_data["default_role"] == "data-reader"
+
+    # Duplicate registration returns 409
+    dup_resp = client.post(
+        "/v1/admin/services",
+        json={"id": "service-alpha", "name": "Duplicate", "allowed_roles": ["admin"]},
+        headers=admin_headers,
+    )
+    assert dup_resp.status_code == 409
+
+    # Invalid default_role returns 422
+    inv_def = client.post(
+        "/v1/admin/services",
+        json={"id": "service-beta", "name": "Beta", "allowed_roles": ["admin"], "default_role": "nonexistent"},
+        headers=admin_headers,
+    )
+    assert inv_def.status_code == 422
+
+    # 3. List services
+    list_resp = client.get("/v1/admin/services", headers=admin_headers)
+    assert list_resp.status_code == 200
+    services = list_resp.json()["services"]
+    assert any(s["id"] == "service-alpha" for s in services)
+
+    # 4. Get service by ID
+    get_resp = client.get("/v1/admin/services/service-alpha", headers=admin_headers)
+    assert get_resp.status_code == 200
+    assert get_resp.json()["name"] == "Service Alpha"
+
+    # 5. Update service
+    upd_resp = client.put(
+        "/v1/admin/services/service-alpha",
+        json={"name": "Service Alpha Updated", "allowed_roles": ["catalog-admin", "data-reader", "curator"]},
+        headers=admin_headers,
+    )
+    assert upd_resp.status_code == 200
+    assert upd_resp.json()["name"] == "Service Alpha Updated"
+    assert "curator" in upd_resp.json()["allowed_roles"]
+
+    # 6. Delete service
+    del_resp = client.delete("/v1/admin/services/service-alpha", headers=admin_headers)
+    assert del_resp.status_code == 200
+    assert del_resp.json()["deleted"] is True
+
+    # Confirm deletion
+    get_del = client.get("/v1/admin/services/service-alpha", headers=admin_headers)
+    assert get_del.status_code == 404
+
+
+def test_custom_roles_grant_validation_and_token_embedding(client):
+    from deskid.crypto import decode_access_token
+
+    # 1. Admin setup
+    admin = client.post(
+        "/v1/auth/register",
+        json={"email": "customroleadmin@example.com", "password": "password123"},
+    ).json()
+    admin_headers = {"Authorization": f"Bearer {admin['access_token']}"}
+
+    # 2. Register two distinct services with bespoke role taxonomies
+    s1 = client.post(
+        "/v1/admin/services",
+        json={
+            "id": "service-catalog",
+            "name": "Data Catalog Service",
+            "allowed_roles": ["catalog-admin", "curator", "consumer"],
+            "default_role": "consumer",
+        },
+        headers=admin_headers,
+    )
+    assert s1.status_code == 201
+
+    s2 = client.post(
+        "/v1/admin/services",
+        json={
+            "id": "service-compute",
+            "name": "Distributed Compute Engine",
+            "allowed_roles": ["cluster-admin", "job-runner", "metrics-viewer"],
+            "default_role": "metrics-viewer",
+        },
+        headers=admin_headers,
+    )
+    assert s2.status_code == 201
+
+    # 3. Register target user
+    user = client.post(
+        "/v1/auth/register",
+        json={"email": "grantee@example.com", "password": "password123"},
+    ).json()
+    user_token = user["access_token"]
+    user_claims = decode_access_token(user_token)
+    user_id = user_claims["sub"]
+    org_1_id = user_claims["org_id"]
+
+    # 4. Attempt to grant an invalid role for service-catalog (422)
+    inv_grant = client.post(
+        "/v1/admin/grants",
+        json={"user_id": user_id, "audience": "service-catalog", "role": "unsupported-role"},
+        headers=admin_headers,
+    )
+    assert inv_grant.status_code == 422
+    assert "not allowed for service" in inv_grant.json()["error"]
+
+    # 5. Grant valid custom role 'curator' globally (org_id=None) on service-catalog
+    g1 = client.post(
+        "/v1/admin/grants",
+        json={"user_id": user_id, "audience": "service-catalog", "role": "curator"},
+        headers=admin_headers,
+    )
+    assert g1.status_code == 200
+
+    # 6. Grant valid custom role 'job-runner' in org_1 on service-compute
+    g2 = client.post(
+        "/v1/admin/grants",
+        json={"user_id": user_id, "audience": "service-compute", "role": "job-runner", "org_id": org_1_id},
+        headers=admin_headers,
+    )
+    assert g2.status_code == 200
+
+    # 7. User switches into org_1 -> issued token contains custom roles for both audiences
+    switch_resp = client.post(
+        "/v1/auth/switch-org",
+        json={"org_id": org_1_id},
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert switch_resp.status_code == 200
+    token_claims = decode_access_token(switch_resp.json()["access_token"])
+
+    assert token_claims["roles"]["service-catalog"] == "curator"
+    assert token_claims["roles"]["service-compute"] == "job-runner"
+
+    # 8. Test auto-population of default_role when role is omitted in grant request
+    g3 = client.post(
+        "/v1/admin/grants",
+        json={"user_id": user_id, "audience": "service-catalog"},  # role omitted
+        headers=admin_headers,
+    )
+    assert g3.status_code == 200
+    assert g3.json()["role"] == "consumer"  # default_role for service-catalog
+
+    # 9. Test PUT invariant check: removing default_role from allowed_roles returns 422
+    inv_put = client.put(
+        "/v1/admin/services/service-catalog",
+        json={"allowed_roles": ["catalog-admin", "curator"]},  # excludes existing default_role 'consumer'
+        headers=admin_headers,
+    )
+    assert inv_put.status_code == 422
+    assert "must be one of allowed_roles" in inv_put.json()["error"]
+
+
+
+

@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, event
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -34,6 +34,7 @@ class User(Base):
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    token_version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     identities: Mapped[list[Identity]] = relationship(back_populates="user")
@@ -84,15 +85,17 @@ class Membership(Base):
 
 class ProductGrant(Base):
     __tablename__ = "product_grants"
-    __table_args__ = (UniqueConstraint("user_id", "audience", name="uq_user_audience"),)
+    __table_args__ = (UniqueConstraint("user_id", "org_id", "audience", name="uq_user_org_audience"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    org_id: Mapped[str | None] = mapped_column(ForeignKey("orgs.id"), nullable=True, index=True)
     audience: Mapped[str] = mapped_column(String(64))  # product id, e.g. agentmesh
     role: Mapped[str] = mapped_column(String(32))  # admin|operator|viewer
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     user: Mapped[User] = relationship(back_populates="grants")
+    org: Mapped[Org | None] = relationship()
 
 
 class RefreshToken(Base):
@@ -149,6 +152,7 @@ class AuditLogEvent(Base):
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
     details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    previous_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     integrity_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
@@ -178,4 +182,17 @@ class RateLimitEntry(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     key: Mapped[str] = mapped_column(String(255), index=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class ServiceDefinition(Base):
+    __tablename__ = "service_definitions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # audience identifier, e.g. "service-a"
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    allowed_roles: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    default_role: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
 

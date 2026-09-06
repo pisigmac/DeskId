@@ -179,6 +179,7 @@
       <nav>
         <button type="button" data-view="overview" aria-current="page">Overview</button>
         <button type="button" data-view="users">Users</button>
+        <button type="button" data-view="services">Services</button>
         <button type="button" data-view="audit">Audit log</button>
         <button type="button" data-view="system">System</button>
       </nav>
@@ -222,6 +223,27 @@
               <button class="btn ghost" id="user-prev" type="button">Previous</button>
               <button class="btn ghost" id="user-next" type="button">Next</button>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-services" class="hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <h1 style="margin:0">Services & Roles</h1>
+          <button class="btn ok" id="svc-new-btn" type="button">+ Register service</button>
+        </div>
+        <p class="lede">Manage integrated service audiences and custom role taxonomies.</p>
+        <div class="toolbar">
+          <div class="field"><label>Search</label><input id="svc-q" placeholder="audience ID or service name" /></div>
+          <button class="btn" id="svc-search" type="button">Search</button>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr><th>Audience ID</th><th>Service Name</th><th>Allowed Roles</th><th>Default Role</th><th>Actions</th></tr></thead>
+            <tbody id="svc-rows"></tbody>
+          </table>
+          <div class="pager">
+            <span id="svc-meta"></span>
           </div>
         </div>
       </section>
@@ -304,9 +326,10 @@
 
     function showView(name) {
       document.querySelectorAll("nav [data-view]").forEach((b) => b.setAttribute("aria-current", b.dataset.view === name ? "page" : "false"));
-      ["overview", "users", "audit", "system"].forEach((v) => $("view-" + v).classList.toggle("hidden", v !== name));
+      ["overview", "users", "services", "audit", "system"].forEach((v) => $("view-" + v).classList.toggle("hidden", v !== name));
       if (name === "overview") loadOverview();
       if (name === "users") loadUsers();
+      if (name === "services") loadServices();
       if (name === "audit") loadAudit();
       if (name === "system") loadSystem();
     }
@@ -343,6 +366,29 @@
         </tr>`;
       }).join("");
     }
+
+    async function loadServices() {
+      const q = $("svc-q").value.trim();
+      const qs = new URLSearchParams({ limit: "50" });
+      if (q) qs.set("q", q);
+      const data = await api("GET", "/v1/admin/services?" + qs);
+      state.services = data.services || [];
+      $("svc-meta").textContent = `${data.total} services registered`;
+      $("svc-rows").innerHTML = state.services.map((s) => {
+        const roles = (s.allowed_roles || []).map((r) => `<span class="badge ink">${esc(r)}</span>`).join(" ");
+        return `<tr data-service-id="${esc(s.id)}">
+          <td><code>${esc(s.id)}</code></td>
+          <td><b>${esc(s.name)}</b><br><span style="color:var(--muted)">${esc(s.description || "—")}</span></td>
+          <td>${roles || "—"}</td>
+          <td>${s.default_role ? `<span class="badge ok">${esc(s.default_role)}</span>` : "—"}</td>
+          <td>
+            <button class="btn ghost" style="padding:4px 8px;font-size:12px" data-edit-svc="${esc(s.id)}" type="button">Edit</button>
+            <button class="btn warn" style="padding:4px 8px;font-size:12px" data-del-svc="${esc(s.id)}" type="button">Delete</button>
+          </td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="5" class="muted">No services registered yet</td></tr>`;
+    }
+
 
     async function loadAudit() {
       const qs = new URLSearchParams({ limit: String(state.limit), offset: String(state.auditOff) });
@@ -444,6 +490,41 @@
       $("d-close").onclick = closeDrawer;
     }
 
+    function openServiceForm(s) {
+      const isEdit = !!s;
+      openDrawer(`
+        <h2 style="font-family:var(--sans);margin:0 0 8px">${isEdit ? "Edit Service" : "Register Service"}</h2>
+        <p class="lede">${isEdit ? "Update service attributes and custom role taxonomy." : "Add an integrated service audience and define its allowed roles."}</p>
+        <div class="field"><label>Audience ID (e.g. service-a)</label><input id="sf-id" placeholder="service-catalog" value="${esc(s?.id || "")}" ${isEdit ? "disabled" : ""} /></div>
+        <div class="field" style="margin-top:8px"><label>Service Name</label><input id="sf-name" placeholder="Data Catalog" value="${esc(s?.name || "")}" /></div>
+        <div class="field" style="margin-top:8px"><label>Description</label><input id="sf-desc" placeholder="Manages datasets and governance" value="${esc(s?.description || "")}" /></div>
+        <div class="field" style="margin-top:8px"><label>Allowed Roles (comma-separated)</label><input id="sf-roles" placeholder="admin, curator, reader" value="${esc((s?.allowed_roles || []).join(", "))}" /></div>
+        <div class="field" style="margin-top:8px"><label>Default Role (optional)</label><input id="sf-default" placeholder="reader" value="${esc(s?.default_role || "")}" /></div>
+        <p style="margin-top:16px"><button class="btn ok" id="sf-save" type="button">${isEdit ? "Save changes" : "Register service"}</button></p>
+        <p><button class="btn ghost" id="d-close" type="button">Close</button></p>
+      `);
+      $("d-close").onclick = closeDrawer;
+      $("sf-save").onclick = async () => {
+        const id = $("sf-id").value.trim();
+        const name = $("sf-name").value.trim();
+        const desc = $("sf-desc").value.trim() || undefined;
+        const roles = $("sf-roles").value.split(",").map((r) => r.trim()).filter(Boolean);
+        const defRole = $("sf-default").value.trim() || undefined;
+        if (!id || !name || !roles.length) { toast("ID, Name, and at least one role are required"); return; }
+        try {
+          if (isEdit) {
+            await api("PUT", `/v1/admin/services/${id}`, { name, description: desc, allowed_roles: roles, default_role: defRole });
+            toast("Service updated");
+          } else {
+            await api("POST", "/v1/admin/services", { id, name, description: desc, allowed_roles: roles, default_role: defRole });
+            toast("Service registered");
+          }
+          closeDrawer();
+          await loadServices();
+        } catch (err) { toast(err.message); }
+      };
+    }
+
     function confirmAction(title, body, onYes) {
       $("modal-bg").innerHTML = `<div class="modal"><h2 style="margin-top:0;font-family:var(--sans)">${esc(title)}</h2><p>${esc(body)}</p>
         <p><button class="btn warn" id="m-yes" type="button">Confirm</button>
@@ -480,11 +561,38 @@
     $("user-prev").onclick = () => { state.usersOff = Math.max(0, state.usersOff - state.limit); loadUsers(); };
     $("user-next").onclick = () => { state.usersOff += state.limit; loadUsers(); };
     $("user-rows").onclick = (e) => { const tr = e.target.closest("[data-user]"); if (tr) openUser(tr.dataset.user); };
+
+    $("svc-new-btn").onclick = () => openServiceForm(null);
+    $("svc-search").onclick = () => loadServices().catch((e) => toast(e.message));
+    $("svc-q").addEventListener("keydown", (e) => { if (e.key === "Enter") $("svc-search").click(); });
+    $("svc-rows").onclick = (e) => {
+      const editBtn = e.target.closest("[data-edit-svc]");
+      if (editBtn) {
+        const svc = state.services.find((x) => x.id === editBtn.dataset.editSvc);
+        if (svc) openServiceForm(svc);
+        return;
+      }
+      const delBtn = e.target.closest("[data-del-svc]");
+      if (delBtn) {
+        const svcId = delBtn.dataset.delSvc;
+        confirmAction(
+          "Delete service definition?",
+          `Are you sure you want to deregister service '${svcId}'?`,
+          async () => {
+            await api("DELETE", `/v1/admin/services/${svcId}`);
+            toast("Service deleted");
+            await loadServices();
+          }
+        );
+      }
+    };
+
     $("audit-load").onclick = () => { state.auditOff = 0; loadAudit().catch((e) => toast(e.message)); };
     $("audit-prev").onclick = () => { state.auditOff = Math.max(0, state.auditOff - state.limit); loadAudit(); };
     $("audit-next").onclick = () => { state.auditOff += state.limit; loadAudit(); };
     $("audit-rows").onclick = (e) => { const tr = e.target.closest("[data-audit-id]"); if (tr) openAudit(tr.dataset.auditId); };
     $("drawer-bg").addEventListener("click", (e) => { if (e.target === $("drawer-bg")) closeDrawer(); });
+
 
     if (state.token) {
       api("GET", "/v1/auth/me").then((me) => {

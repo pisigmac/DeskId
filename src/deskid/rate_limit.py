@@ -50,32 +50,37 @@ class RateLimiter:
             return True
 
     def _is_allowed_db(self, key: str, limit: int, window_seconds: int, now: datetime) -> bool:
-        from deskid.db import get_db_session
-        from deskid.models import RateLimitEntry
+        try:
+            from deskid.db import get_db_session
+            from deskid.models import RateLimitEntry
 
-        cutoff = now - timedelta(seconds=window_seconds)
-        with get_db_session() as session:
-            # Count records within active window
-            count_stmt = select(func.count(RateLimitEntry.id)).where(
-                RateLimitEntry.key == key,
-                RateLimitEntry.timestamp > cutoff,
-            )
-            count = session.execute(count_stmt).scalar() or 0
-            if count >= limit:
+            cutoff = now - timedelta(seconds=window_seconds)
+            with get_db_session() as session:
+                # Count records within active window
+                count_stmt = select(func.count(RateLimitEntry.id)).where(
+                    RateLimitEntry.key == key,
+                    RateLimitEntry.timestamp > cutoff,
+                )
+                count = session.execute(count_stmt).scalar() or 0
+                if count >= limit:
+                    return False
+
+                # Insert entry and optionally prune expired entries
+                entry = RateLimitEntry(key=key, timestamp=now)
+                session.add(entry)
+
+                # Opportunistic cleanup for this key
+                session.query(RateLimitEntry).filter(
+                    RateLimitEntry.key == key,
+                    RateLimitEntry.timestamp <= cutoff,
+                ).delete(synchronize_session=False)
+
+                session.commit()
+                return True
+        except Exception:
+            if getattr(self.settings, "rate_limit_fail_closed", False):
                 return False
-
-            # Insert entry and optionally prune expired entries
-            entry = RateLimitEntry(key=key, timestamp=now)
-            session.add(entry)
-
-            # Opportunistic cleanup for this key
-            session.query(RateLimitEntry).filter(
-                RateLimitEntry.key == key,
-                RateLimitEntry.timestamp <= cutoff,
-            ).delete(synchronize_session=False)
-
-            session.commit()
-            return True
+            return self._is_allowed_memory(key, limit, window_seconds, now)
 
     def _get_redis_client(self):
         if not hasattr(self, "_redis_client") or self._redis_client is None:
@@ -91,6 +96,8 @@ class RateLimiter:
     def _is_allowed_redis(self, key: str, limit: int, window_seconds: int, now: datetime) -> bool:
         redis_url = self.settings.rate_limit_redis_url
         if not redis_url:
+            if getattr(self.settings, "rate_limit_fail_closed", False):
+                return False
             return self._is_allowed_memory(key, limit, window_seconds, now)
 
         try:
@@ -116,6 +123,8 @@ class RateLimiter:
                 return False
             return True
         except Exception:
+            if getattr(self.settings, "rate_limit_fail_closed", False):
+                return False
             # Fall back to memory on redis connection issue
             return self._is_allowed_memory(key, limit, window_seconds, now)
 

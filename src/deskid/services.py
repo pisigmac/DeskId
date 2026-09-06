@@ -40,7 +40,7 @@ def user_to_out(user: User) -> UserOut:
         )
         for m in user.memberships
     ]
-    grants = [GrantOut(audience=g.audience, role=g.role) for g in user.grants]
+    grants = [GrantOut(audience=g.audience, role=g.role, org_id=g.org_id) for g in user.grants]
     return UserOut(
         id=user.id,
         email=user.email,
@@ -59,18 +59,49 @@ def primary_org(user: User) -> Membership | None:
     return owners[0] if owners else user.memberships[0]
 
 
-def issue_tokens(db: Session, user: User, settings: Settings | None = None) -> TokenResponse:
+def issue_tokens(
+    db: Session,
+    user: User,
+    settings: Settings | None = None,
+    *,
+    org_id: str | None = None,
+) -> TokenResponse:
     settings = settings or get_settings()
-    membership = primary_org(user)
-    roles = {g.audience: g.role for g in user.grants}
+    membership: Membership | None = None
+    if org_id:
+        membership = next((m for m in user.memberships if m.org_id == org_id), None)
+        if not membership:
+            membership = (
+                db.query(Membership)
+                .filter(Membership.user_id == user.id, Membership.org_id == org_id)
+                .one_or_none()
+            )
+        if not membership:
+            raise ValueError(f"User is not a member of organization {org_id}")
+    else:
+        membership = primary_org(user)
+
+    active_org_id = membership.org_id if membership else None
+    roles: dict[str, str] = {}
+    # First, collect user-wide/global grants (org_id is None)
+    for g in user.grants:
+        if g.org_id is None:
+            roles[g.audience] = g.role
+    # Next, override with org-specific grants matching active_org_id
+    if active_org_id:
+        for g in user.grants:
+            if g.org_id == active_org_id:
+                roles[g.audience] = g.role
+
     audiences = list(roles.keys())
     access = issue_access_token(
         sub=user.id,
         email=user.email,
-        org_id=membership.org_id if membership else None,
+        org_id=active_org_id,
         workspace_id=membership.workspace_id if membership else None,
         audiences=audiences,
         roles=roles,
+        token_version=getattr(user, "token_version", 1) or 1,
         settings=settings,
     )
     from deskid.middleware import get_request_context
@@ -98,21 +129,22 @@ def ensure_default_grant(
     db: Session,
     user: User,
     audience: str,
+    org_id: str | None = None,
     role: str = "operator",
 ) -> None:
-    existing = next((g for g in user.grants if g.audience == audience), None)
+    existing = next((g for g in user.grants if g.audience == audience and g.org_id == org_id), None)
     if existing:
         return
-    grant = ProductGrant(user_id=user.id, audience=audience, role=role)
+    grant = ProductGrant(user_id=user.id, org_id=org_id, audience=audience, role=role)
     db.add(grant)
     db.commit()
     db.refresh(user)
 
 
-def _apply_default_grants(db: Session, user: User, *, role: str) -> None:
+def _apply_default_grants(db: Session, user: User, *, org_id: str | None = None, role: str) -> None:
     settings = get_settings()
     for audience in settings.default_audience_list():
-        db.add(ProductGrant(user_id=user.id, audience=audience, role=role))
+        db.add(ProductGrant(user_id=user.id, org_id=org_id, audience=audience, role=role))
 
 
 def create_user_with_password(
@@ -139,7 +171,7 @@ def create_user_with_password(
     db.add(org)
     db.flush()
     db.add(Membership(org_id=org.id, user_id=user.id, role="owner", workspace_id=org.id))
-    _apply_default_grants(db, user, role=role)
+    _apply_default_grants(db, user, org_id=org.id, role=role)
     db.commit()
     db.refresh(user)
     return user
@@ -233,7 +265,7 @@ def find_or_create_oauth_user(
     db.add(org)
     db.flush()
     db.add(Membership(org_id=org.id, user_id=user.id, role="owner", workspace_id=org.id))
-    _apply_default_grants(db, user, role=settings.default_role)
+    _apply_default_grants(db, user, org_id=org.id, role=settings.default_role)
     db.add(Identity(user_id=user.id, provider=provider, provider_subject=provider_subject))
     db.commit()
     db.refresh(user)
@@ -349,11 +381,21 @@ def reset_user_password(db: Session, user: User, password: str) -> None:
 # Audit log
 # ---------------------------------------------------------------------------
 
-def _audit_integrity_hash(*, action: str, actor_type: str, actor_id: str | None, resource_type: str, resource_id: str | None, details: str | None) -> str:
+def _audit_integrity_hash(
+    *,
+    previous_hash: str | None,
+    action: str,
+    actor_type: str,
+    actor_id: str | None,
+    resource_type: str,
+    resource_id: str | None,
+    details: str | None,
+) -> str:
     import hashlib
 
     payload = "|".join(
         [
+            previous_hash or "GENESIS",
             action,
             actor_type,
             actor_id or "",
@@ -377,6 +419,13 @@ def emit_audit(
     user_agent: str | None = None,
     details: dict | None = None,
 ) -> None:
+    last_event = (
+        db.query(AuditLogEvent)
+        .order_by(AuditLogEvent.occurred_at.desc(), AuditLogEvent.id.desc())
+        .first()
+    )
+    prev_hash = last_event.integrity_hash if last_event else "GENESIS"
+
     event = AuditLogEvent(
         actor_type=actor_type,
         actor_id=actor_id,
@@ -386,8 +435,10 @@ def emit_audit(
         ip_address=ip_address,
         user_agent=user_agent,
         details=json.dumps(details) if details else None,
+        previous_hash=prev_hash,
     )
     event.integrity_hash = _audit_integrity_hash(
+        previous_hash=event.previous_hash,
         action=event.action,
         actor_type=event.actor_type,
         actor_id=event.actor_id,
@@ -449,6 +500,8 @@ def export_user_data(db: Session, user: User) -> dict:
                 "action": e.action,
                 "occurred_at": e.occurred_at.isoformat(),
                 "details": e.details,
+                "previous_hash": e.previous_hash,
+                "integrity_hash": e.integrity_hash,
             }
             for e in audit_events
         ],
@@ -464,10 +517,25 @@ def delete_user_data(db: Session, user: User) -> None:
         db.delete(token)
     for identity in list(user.identities):
         db.delete(identity)
-    for membership in list(user.memberships):
-        db.delete(membership)
     for grant in list(user.grants):
         db.delete(grant)
+
+    # Clean up memberships and handle orphaned orgs or owner succession
+    for membership in list(user.memberships):
+        org_id = membership.org_id
+        db.delete(membership)
+        db.flush()
+
+        remaining = db.query(Membership).filter(Membership.org_id == org_id).all()
+        if not remaining:
+            org = db.query(Org).filter(Org.id == org_id).one_or_none()
+            if org:
+                db.delete(org)
+        else:
+            has_owner = any(m.role == "owner" for m in remaining)
+            if not has_owner and remaining:
+                remaining[0].role = "owner"
+
     db.delete(user)
     db.commit()
 
@@ -531,6 +599,7 @@ def change_password(db: Session, user: User, current_password: str, new_password
 
 def set_user_active(db: Session, user: User, *, is_active: bool) -> User:
     user.is_active = is_active
+    user.token_version = (getattr(user, "token_version", 1) or 1) + 1
     if not is_active:
         user.deleted_at = datetime.now(timezone.utc)
         # Revoke all active refresh tokens
@@ -564,6 +633,7 @@ def list_user_sessions(db: Session, user: User) -> list[dict]:
 
 
 def revoke_all_user_sessions(db: Session, user: User, *, commit: bool = True) -> int:
+    user.token_version = (getattr(user, "token_version", 1) or 1) + 1
     rows = (
         db.query(RefreshToken)
         .filter(RefreshToken.user_id == user.id, RefreshToken.revoked.is_(False))

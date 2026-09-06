@@ -69,6 +69,7 @@ export type GrantRequest = {
   user_id: string
   audience: string
   role: string
+  org_id?: string
 }
 
 export type AuditLogResponse = {
@@ -76,6 +77,31 @@ export type AuditLogResponse = {
   offset: number
   limit: number
   events: Array<Record<string, unknown>>
+}
+
+export type ServiceDefinition = {
+  id: string
+  name: string
+  description?: string | null
+  allowed_roles: string[]
+  default_role?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ServiceCreateInput = {
+  id: string
+  name: string
+  description?: string
+  allowed_roles: string[]
+  default_role?: string
+}
+
+export type ServiceUpdateInput = {
+  name?: string
+  description?: string
+  allowed_roles?: string[]
+  default_role?: string
 }
 
 export class DeskID {
@@ -201,6 +227,10 @@ export class DeskID {
     return this.request('GET', `/v1/admin/users${query}`, undefined, token)
   }
 
+  async switchOrg(token: string, orgId: string): Promise<ClientResult<TokenResponse>> {
+    return this.request('POST', '/v1/auth/switch-org', { org_id: orgId }, token)
+  }
+
   async listOrgs(token: string): Promise<ClientResult<Array<{ id: string; name: string; role: string; workspace_id: string | null }>>> {
     return this.request('GET', '/v1/orgs', undefined, token)
   }
@@ -254,7 +284,55 @@ export class DeskID {
     const query = qs.toString() ? `?${qs}` : ''
     return this.request('GET', `/v1/admin/audit${query}`, undefined, token)
   }
+
+  async queryReconciliationEvents(
+    token: string,
+    params: { since_id?: string; since_timestamp?: string; limit?: number },
+  ): Promise<ClientResult<{ events: Array<Record<string, unknown>>; next_cursor: string | null; has_more: boolean }>> {
+    const qs = new URLSearchParams()
+    if (params.since_id) qs.set('since_id', params.since_id)
+    if (params.since_timestamp) qs.set('since_timestamp', params.since_timestamp)
+    if (params.limit !== undefined) qs.set('limit', String(params.limit))
+    const query = qs.toString() ? `?${qs}` : ''
+    return this.request('GET', `/v1/admin/reconciliation/events${query}`, undefined, token)
+  }
+
+  async registerService(token: string, input: ServiceCreateInput): Promise<ClientResult<ServiceDefinition>> {
+    return this.request('POST', '/v1/admin/services', input, token)
+  }
+
+  async listServices(
+    token: string,
+    params: { q?: string; limit?: number; offset?: number } = {},
+  ): Promise<ClientResult<{ services: ServiceDefinition[]; total: number; offset: number; limit: number }>> {
+    const qs = new URLSearchParams()
+    if (params.q) qs.set('q', params.q)
+    if (params.limit !== undefined) qs.set('limit', String(params.limit))
+    if (params.offset !== undefined) qs.set('offset', String(params.offset))
+    const query = qs.toString() ? `?${qs}` : ''
+    return this.request('GET', `/v1/admin/services${query}`, undefined, token)
+  }
+
+  async getService(token: string, serviceId: string): Promise<ClientResult<ServiceDefinition>> {
+    return this.request('GET', `/v1/admin/services/${serviceId}`, undefined, token)
+  }
+
+  async updateService(
+    token: string,
+    serviceId: string,
+    input: ServiceUpdateInput,
+  ): Promise<ClientResult<ServiceDefinition>> {
+    return this.request('PUT', `/v1/admin/services/${serviceId}`, input, token)
+  }
+
+  async deleteService(
+    token: string,
+    serviceId: string,
+  ): Promise<ClientResult<{ ok: boolean; deleted: boolean; service_id: string }>> {
+    return this.request('DELETE', `/v1/admin/services/${serviceId}`, undefined, token)
+  }
 }
 
 export { DeskID as DeskIDClient, DeskID as DeskIDAuth, DeskID as DeskID, DeskID as DeskAuth, DeskID as PisigmaAuth }
+
 

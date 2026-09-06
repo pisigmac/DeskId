@@ -6,11 +6,28 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from deskid.db import get_db
+from deskid.middleware import get_request_context
 from deskid.models import Membership, Org, User
 from deskid.routes.auth import current_user
 from deskid.schemas import AddMemberRequest, CreateOrgRequest, OrgOut
+from deskid.services import emit_audit
 
 router = APIRouter(prefix="/orgs", tags=["orgs"])
+
+
+def _emit_org_audit(db: Session, action: str, user: User, resource_type: str, resource_id: str | None, details: dict | None = None) -> None:
+    ctx = get_request_context()
+    emit_audit(
+        db,
+        action=action,
+        actor_type="user",
+        actor_id=user.id,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        ip_address=ctx.get("ip"),
+        user_agent=ctx.get("user_agent"),
+        details=details,
+    )
 
 
 @router.get("", response_model=list[OrgOut])
@@ -32,6 +49,7 @@ def create_org(
     db.flush()
     db.add(Membership(org_id=org.id, user_id=user.id, role="owner", workspace_id=org.id))
     db.commit()
+    _emit_org_audit(db, "org.create", user, "org", org.id, {"name": org.name})
     return OrgOut(id=org.id, name=org.name, role="owner", workspace_id=org.id)
 
 
@@ -70,6 +88,7 @@ def add_member(
             )
         )
     db.commit()
+    _emit_org_audit(db, "org.member_add", user, "membership", body.user_id, {"org_id": org_id, "role": body.role})
     return {"ok": True}
 
 
@@ -121,6 +140,7 @@ def remove_member(
             raise HTTPException(status_code=400, detail="Cannot remove the last owner")
     db.delete(target)
     db.commit()
+    _emit_org_audit(db, "org.member_remove", user, "membership", user_id, {"org_id": org_id})
     return {"ok": True}
 
 
@@ -139,4 +159,5 @@ def delete_org(
     db.query(Membership).filter(Membership.org_id == org_id).delete()
     db.delete(org)
     db.commit()
+    _emit_org_audit(db, "org.delete", user, "org", org_id)
     return {"ok": True}

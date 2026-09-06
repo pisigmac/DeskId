@@ -93,14 +93,14 @@ SQLAlchemy 2 declarative. IDs are UUID strings.
 | `Identity` | `identities` | Unique `(provider, provider_subject)` |
 | `Org` | `orgs` | Tenant |
 | `Membership` | `memberships` | Unique `(org_id, user_id)`; role `owner\|admin\|member` |
-| `ProductGrant` | `product_grants` | Unique `(user_id, audience)`; role `admin\|operator\|viewer` |
+| `ProductGrant` | `product_grants` | Unique `(user_id, org_id, audience)`; role `admin\|operator\|viewer` |
 | `RefreshToken` | `refresh_tokens` | `token_hash` unique; `revoked` flag |
 | `EmailVerificationToken` | `email_verification_tokens` | hashed, `used_at` |
 | `PasswordResetToken` | `password_reset_tokens` | hashed, `used_at` |
-| `AuditLogEvent` | `audit_log_events` | Append-only by convention |
+| `AuditLogEvent` | `audit_log_events` | Append-only SHA-256 hash-chained log |
 | `OAuthState` | `oauth_states` | CSRF state |
 
-`User.deleted_at` is set on admin suspend; GDPR path **hard-deletes** the row instead.
+`User.deleted_at` is set on admin suspend; GDPR path **hard-deletes** the row and cleans up orphaned organizations. `User.token_version` is bumped on security/suspension events.
 
 ### `src/deskid/schemas.py`
 
