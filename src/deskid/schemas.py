@@ -47,6 +47,10 @@ class LogoutRequest(BaseModel):
     refresh_token: str
 
 
+class SwitchOrgRequest(BaseModel):
+    org_id: str
+
+
 class GrantOut(BaseModel):
     audience: str
     role: str

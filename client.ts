@@ -201,6 +201,10 @@ export class DeskID {
     return this.request('GET', `/v1/admin/users${query}`, undefined, token)
   }
 
+  async switchOrg(token: string, orgId: string): Promise<ClientResult<TokenResponse>> {
+    return this.request('POST', '/v1/auth/switch-org', { org_id: orgId }, token)
+  }
+
   async listOrgs(token: string): Promise<ClientResult<Array<{ id: string; name: string; role: string; workspace_id: string | null }>>> {
     return this.request('GET', '/v1/orgs', undefined, token)
   }

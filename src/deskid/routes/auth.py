@@ -26,6 +26,7 @@ from deskid.schemas import (
     RegisterResponse,
     ResetPasswordRequest,
     SessionOut,
+    SwitchOrgRequest,
     TokenResponse,
     UpdateProfileRequest,
     UserOut,
@@ -183,6 +184,20 @@ def logout(body: LogoutRequest, db: Session = Depends(get_db)) -> dict:
     revoke_refresh(db, body.refresh_token)
     _emit(db, "user.logout", None, resource_type="session")
     return {"ok": True}
+
+
+@router.post("/switch-org", response_model=TokenResponse)
+def switch_org(
+    body: SwitchOrgRequest,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> TokenResponse:
+    try:
+        tokens = issue_tokens(db, user, org_id=body.org_id)
+        _emit(db, "user.switch_org", user.id, resource_type="org", resource_id=body.org_id)
+        return tokens
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
 
 
 @router.get("/me", response_model=UserOut)

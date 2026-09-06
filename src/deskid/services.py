@@ -59,9 +59,28 @@ def primary_org(user: User) -> Membership | None:
     return owners[0] if owners else user.memberships[0]
 
 
-def issue_tokens(db: Session, user: User, settings: Settings | None = None) -> TokenResponse:
+def issue_tokens(
+    db: Session,
+    user: User,
+    settings: Settings | None = None,
+    *,
+    org_id: str | None = None,
+) -> TokenResponse:
     settings = settings or get_settings()
-    membership = primary_org(user)
+    membership: Membership | None = None
+    if org_id:
+        membership = next((m for m in user.memberships if m.org_id == org_id), None)
+        if not membership:
+            membership = (
+                db.query(Membership)
+                .filter(Membership.user_id == user.id, Membership.org_id == org_id)
+                .one_or_none()
+            )
+        if not membership:
+            raise ValueError(f"User is not a member of organization {org_id}")
+    else:
+        membership = primary_org(user)
+
     roles = {g.audience: g.role for g in user.grants}
     audiences = list(roles.keys())
     access = issue_access_token(

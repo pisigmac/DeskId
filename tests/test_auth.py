@@ -1681,3 +1681,47 @@ def test_jwks_rotation_and_historical_keys(monkeypatch):
 
     get_settings.cache_clear()
     _ensure_keys.cache_clear()
+
+
+def test_switch_org_scoping_and_forbidden(client):
+    from deskid.crypto import decode_access_token
+
+    # 1. Register user
+    reg = client.post(
+        "/v1/auth/register",
+        json={"email": "orgswitcher@example.com", "password": "password123"},
+    ).json()
+    token_1 = reg["access_token"]
+    claims_1 = decode_access_token(token_1)
+    org_1_id = claims_1["org_id"]
+    assert org_1_id is not None
+
+    # 2. Create second org
+    org_2_resp = client.post(
+        "/v1/orgs",
+        json={"name": "Second Org", "slug": "second-org"},
+        headers={"Authorization": f"Bearer {token_1}"},
+    )
+    assert org_2_resp.status_code == 200
+    org_2_id = org_2_resp.json()["id"]
+    assert org_2_id != org_1_id
+
+    # 3. Switch org to second org
+    switch_resp = client.post(
+        "/v1/auth/switch-org",
+        json={"org_id": org_2_id},
+        headers={"Authorization": f"Bearer {token_1}"},
+    )
+    assert switch_resp.status_code == 200
+    token_2 = switch_resp.json()["access_token"]
+    claims_2 = decode_access_token(token_2)
+    assert claims_2["org_id"] == org_2_id
+    assert claims_2["workspace_id"] == org_2_id
+
+    # 4. Attempt to switch to an unauthorized random org ID
+    unauth_resp = client.post(
+        "/v1/auth/switch-org",
+        json={"org_id": "00000000-0000-0000-0000-000000000000"},
+        headers={"Authorization": f"Bearer {token_2}"},
+    )
+    assert unauth_resp.status_code == 403
