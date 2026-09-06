@@ -65,82 +65,119 @@ Example claims (after granting audience `myproduct`):
 }
 ```
 
-## JWT key management
+## Enterprise IAM & Grant Scoping
 
-**Keys are required.** Auth will refuse to start token issuance without configured keys — it no longer generates ephemeral key pairs. This prevents token invalidation on restart.
+DeskID provides a central identity and access management control plane for all integrated downstream services across multi-tenant environments.
 
-Set via env (inline PEM with `\n` escapes) or file paths:
+### Service-Wide vs Organization-Wide Grants
 
-```bash
-AUTH_JWT_PRIVATE_KEY_FILE=/run/secrets/auth_private.pem
-AUTH_JWT_PUBLIC_KEY_FILE=/run/secrets/auth_public.pem
+Grants can be scoped at two distinct levels:
+
+1. **Service-Wide (Global Platform) Grants (`org_id = null`):**
+   - Applied to an integrated service across the entire platform regardless of which organization context the user is in.
+   - Typically used for platform operators, infrastructure administrators, and global security auditors.
+   - Always included in `roles` and `aud` across all organization contexts.
+
+2. **Organization-Wide (Tenant-Scoped) Grants (`org_id = "<org_id>"`):**
+   - Applied to an integrated service **strictly within the boundary of that specific Organization**.
+   - Allows fine-grained role separation (e.g. an admin on `service-a` in Tenant 1, but a viewer on `service-a` in Tenant 2).
+   - Dynamically evaluated and bound to the JWT when the user activates or switches organizations via `POST /v1/auth/switch-org`.
+
+```
+                              ┌───────────────────────────────────┐
+                              │            DeskID Auth            │
+                              │    (Central IAM Control Plane)    │
+                              └─────────────────┬─────────────────┘
+                                                │
+                 ┌──────────────────────────────┴──────────────────────────────┐
+                 ▼                                                             ▼
+    ┌──────────────────────────┐                                  ┌──────────────────────────┐
+    │   Service-Wide Grants    │                                  │ Organization-Wide Grants │
+    │   (Global / Product IAM) │                                  │ (Multi-Tenant Scoped)    │
+    └────────────┬─────────────┘                                  └────────────┬─────────────┘
+                 │                                                             │
+   User gets access across all orgs                              User gets access ONLY when
+   (e.g. Platform Operator, Global Auditor)                      active in a specific Tenant
 ```
 
-To rotate keys without downtime: add the new public key to JWKS (keep both KIDs active), migrate signing to the new private key, then remove the old KID after existing tokens expire.
+### Token Claims & Resolution
 
-## Email verification and password reset
+When an access token is issued, DeskID resolves grants for the active organization:
+1. Base service-wide grants (`org_id = null`) are loaded.
+2. Organization-specific grants (`org_id = active_org_id`) take precedence and override global defaults for matching services.
 
-Requires the **Mail service** to be running and configured:
+Example Token Payload:
 
-```bash
-AUTH_MAIL_BASE_URL=http://127.0.0.1:8787
-AUTH_MAIL_API_KEY=your-mail-api-key
+```json
+{
+  "sub": "usr_948a28f1",
+  "email": "user@company.internal",
+  "org_id": "org_tenant_1",
+  "workspace_id": "ws_production",
+  "aud": ["deskid", "service-a", "service-b", "service-c"],
+  "roles": {
+    "service-a": "admin",
+    "service-b": "operator",
+    "service-c": "viewer"
+  },
+  "token_version": 1,
+  "iss": "https://auth.company.internal",
+  "iat": 1725634800,
+  "exp": 1725635700
+}
 ```
 
-On register, a verification email is sent automatically. Password-based accounts cannot log in until the email is verified via `POST /v1/auth/verify-email`. OAuth users are treated as already verified by their provider.
+Integrated downstream services validate the token locally and statelessly using public keys fetched from `/.well-known/jwks.json`.
 
-Password reset is initiated via `POST /v1/auth/forgot-password` — a reset link is emailed to the user. Mail failures are non-fatal in development (registration still succeeds) but are logged.
+## Zero-Downtime Key Rotation (JWKS Key Ring)
 
-## Account lockout
+DeskID supports continuous zero-downtime RSA key rotation:
+- The active signing key is configured via `AUTH_JWT_PRIVATE_KEY` / `AUTH_JWT_PUBLIC_KEY`.
+- Previous/historical public verification keys can be supplied via `AUTH_JWT_PREVIOUS_PUBLIC_KEYS` (JSON array/map) or `AUTH_JWT_PREVIOUS_PUBLIC_KEYS_FILE`.
+- `/.well-known/jwks.json` advertises all active and historical keys simultaneously.
+- When validating tokens, DeskID inspects the unverified `kid` header and matches against the full key ring.
 
-After repeated failed password attempts, an account is temporarily locked to slow brute-force attacks:
+## Downstream Reconciliation Event Feed
 
-```bash
-AUTH_ACCOUNT_LOCKOUT_MAX_ATTEMPTS=5
-AUTH_ACCOUNT_LOCKOUT_DURATION_SECONDS=900  # 15 minutes
-```
-
-A successful login resets the failed-attempt counter. The same generic `401 Invalid credentials` is returned for wrong passwords, locked accounts, and unverified emails to avoid information leakage.
-
-## Rate limiting
-
-Per-IP in-memory rate limits are applied to sensitive endpoints. Configure via env:
+Downstream services can maintain synchronized local caches of user status, organization lifecycle, and grant assignments by polling the chronological reconciliation feed:
 
 ```bash
-AUTH_RATE_LIMIT_LOGIN=10                    # max requests
-AUTH_RATE_LIMIT_LOGIN_WINDOW_SECONDS=60     # per window
-AUTH_RATE_LIMIT_REGISTER=10
-AUTH_RATE_LIMIT_REGISTER_WINDOW_SECONDS=60
-AUTH_RATE_LIMIT_PASSWORD_RESET=5
-AUTH_RATE_LIMIT_PASSWORD_RESET_WINDOW_SECONDS=60
-AUTH_RATE_LIMIT_REFRESH=20
-AUTH_RATE_LIMIT_REFRESH_WINDOW_SECONDS=60
+GET /v1/admin/reconciliation/events?since_id=<event_id>&limit=50
 ```
 
-When Auth is deployed behind a trusted reverse proxy, enable `AUTH_RATE_LIMIT_TRUST_PROXY=true` so the rate limiter uses the client IP from `X-Forwarded-For` instead of the proxy's IP. Do not enable this if Auth is exposed directly to clients.
+Returns:
+```json
+{
+  "events": [
+    {
+      "id": "evt_01",
+      "occurred_at": "2026-09-06T12:00:00Z",
+      "action": "admin.set_grant",
+      "resource_type": "product_grant",
+      "resource_id": "usr_123",
+      "previous_hash": "GENESIS",
+      "integrity_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "details": "{\"audience\": \"service-a\", \"role\": \"admin\", \"org_id\": \"org_tenant_1\"}"
+    }
+  ],
+  "next_cursor": "evt_01",
+  "has_more": false
+}
+```
 
-Blocked requests receive `429 Too Many Requests`.
+## Cryptographic Audit Log & Offline Verification
 
-## Token introspection
+All security events are cryptographically chained using SHA-256 (`previous_hash` $\rightarrow$ `integrity_hash`).
 
-`/introspect` requires a Bearer API key. Set `AUTH_INTROSPECTION_API_KEY` to enable it; leaving it empty disables the endpoint (returns `503`).
+To verify chain integrity offline or from the database:
 
 ```bash
-curl -X POST http://127.0.0.1:8090/introspect \
-  -H "Authorization: Bearer $AUTH_INTROSPECTION_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"token": "<access_token>"}'
+# Verify from live database:
+AUTH_DATABASE_URL="postgresql+psycopg://..." python3 scripts/verify_audit_chain.py
+
+# Verify from exported JSON:
+python3 scripts/verify_audit_chain.py --file audit_export.json
 ```
-
-## Audit log
-
-All auth and admin events are written to `audit_log_events`. Query via the admin API:
-
-```bash
-GET /v1/admin/audit?action=user.login&limit=25
-```
-
-Emitted actions: `user.register`, `user.login`, `user.logout`, `user.verify_email`, `user.forgot_password`, `user.reset_password`, `user.delete`, `admin.set_grant`.
 
 ## OAuth setup
 
