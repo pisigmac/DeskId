@@ -718,6 +718,53 @@ def test_introspect_with_valid_key(client, monkeypatch):
     get_settings.cache_clear()
 
 
+def test_introspect_returns_inactive_for_suspended_or_deleted_user(client, monkeypatch):
+    monkeypatch.setenv("AUTH_INTROSPECTION_API_KEY", "secret-key")
+    from deskid.config import get_settings
+    get_settings.cache_clear()
+
+    admin = client.post("/v1/auth/register", json={
+        "email": "introspect_admin@example.com",
+        "password": "password123",
+    }).json()
+    user = client.post("/v1/auth/register", json={
+        "email": "to_suspend@example.com",
+        "password": "password123",
+    }).json()
+
+    # Active user token is active
+    r1 = client.post(
+        "/introspect",
+        json={"token": user["access_token"]},
+        headers={"Authorization": "Bearer secret-key"},
+    )
+    assert r1.status_code == 200
+    assert r1.json()["active"] is True
+
+    # Suspend user via admin endpoint
+    user_id = client.get(
+        "/v1/auth/me",
+        headers={"Authorization": f"Bearer {user['access_token']}"},
+    ).json()["id"]
+
+    client.patch(
+        f"/v1/admin/users/{user_id}/active",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={"is_active": False},
+    )
+
+    # Introspect should now report active: false immediately
+    r2 = client.post(
+        "/introspect",
+        json={"token": user["access_token"]},
+        headers={"Authorization": "Bearer secret-key"},
+    )
+    assert r2.status_code == 200
+    assert r2.json()["active"] is False
+    assert r2.json()["claims"] is None
+    get_settings.cache_clear()
+
+
 
 # ---------------------------------------------------------------------------
 # P1 hardening — audience verification, refresh rate limit, proxy IP, mail logging
