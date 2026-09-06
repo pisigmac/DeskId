@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OpenDesk Auth — Audit Log Export Utility (export_audit_logs.sh)
+# DeskID — Audit Log Export Utility (export_audit_logs.sh)
 # ==============================================================================
 # Queries and exports security and audit logs from /v1/admin/audit into
 # JSON or CSV format for SOC2 compliance and security auditing.

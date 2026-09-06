@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OpenDesk Auth — Service Status & Diagnostics Shortcut
+# DeskID — Service Status & Diagnostics Shortcut
 # ==============================================================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 exec bash "${SCRIPT_DIR}/scripts/status.sh" "$@"

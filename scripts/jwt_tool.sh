@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OpenDesk Auth — JWT Token Generator & Verification CLI
+# DeskID — JWT Token Generator & Verification CLI
 # ==============================================================================
 
 set -euo pipefail

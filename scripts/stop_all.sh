@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OpenDesk Auth — Service Shutdown Utility (stop_all.sh)
+# DeskID — Service Shutdown Utility (stop_all.sh)
 # ==============================================================================
-# Gracefully stops all running OpenDesk Auth processes and Docker containers.
+# Gracefully stops all running DeskID processes and Docker containers.
 # ==============================================================================
 
 set -euo pipefail
@@ -21,7 +21,7 @@ NC='\033[0m'
 PID_FILE="${ROOT_DIR}/.auth.pid"
 STOPPED_ANY=false
 
-echo -e "${BLUE}${BOLD}=== Stopping OpenDesk Auth Infrastructure ===${NC}"
+echo -e "${BLUE}${BOLD}=== Stopping DeskID Infrastructure ===${NC}"
 
 # 1. Stop local background PID if tracked
 if [ -f "${PID_FILE}" ]; then
@@ -78,7 +78,7 @@ if command -v docker >/dev/null 2>&1; then
 fi
 
 if [ "${STOPPED_ANY}" = true ]; then
-    echo -e "\n${GREEN}${BOLD}✓ All OpenDesk Auth services have been stopped successfully.${NC}"
+    echo -e "\n${GREEN}${BOLD}✓ All DeskID services have been stopped successfully.${NC}"
 else
-    echo -e "\n${YELLOW}No active OpenDesk Auth processes or containers were found running.${NC}"
+    echo -e "\n${YELLOW}No active DeskID processes or containers were found running.${NC}"
 fi

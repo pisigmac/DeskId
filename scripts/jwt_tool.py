@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""OpenDesk Auth — JWT Generation, Inspection & Verification Utility.
+"""DeskID — JWT Generation, Inspection & Verification Utility.
 
 Provides CLI commands for:
   - Generating custom RS256 JWT access tokens for testing and mock services.
@@ -103,13 +103,13 @@ def cmd_generate(args: argparse.Namespace) -> None:
     if not issuer:
         print(f"{Colors.RED}Error: AUTH_ISSUER is not set in environment or .env. Specify --iss or configure AUTH_ISSUER.{Colors.RESET}")
         sys.exit(1)
-    kid = args.kid or os.environ.get("AUTH_JWT_KID") or env_vals.get("AUTH_JWT_KID") or "opendesk-auth-1"
+    kid = args.kid or os.environ.get("AUTH_JWT_KID") or env_vals.get("AUTH_JWT_KID") or "deskid-1"
     sub = args.sub or str(uuid.uuid4())
     email = args.email or os.environ.get("AUTH_TEST_USER_EMAIL") or env_vals.get("AUTH_TEST_USER_EMAIL") or f"user-{sub[:8]}@auth.local"
     org_id = args.org_id or str(uuid.uuid4())
     workspace_id = args.workspace_id or org_id
 
-    audiences = ["opendesk-auth"]
+    audiences = ["deskid"]
     if args.aud:
         for a in args.aud.split(","):
             a = a.strip()
@@ -301,7 +301,7 @@ def cmd_test(args: argparse.Namespace) -> None:
         print(f"{Colors.RED}Error: Base URL is not set. Specify --base-url or set AUTH_ISSUER in environment or .env.{Colors.RESET}")
         sys.exit(1)
     print(f"\n{Colors.BLUE}{Colors.BOLD}======================================================{Colors.RESET}")
-    print(f"{Colors.BLUE}{Colors.BOLD}        🧪 OpenDesk Auth JWT & JWKS Test Suite        {Colors.RESET}")
+    print(f"{Colors.BLUE}{Colors.BOLD}        🧪 DeskID JWT & JWKS Test Suite        {Colors.RESET}")
     print(f"{Colors.BLUE}{Colors.BOLD}======================================================{Colors.RESET}\n")
 
     priv_pem, pub_pem = get_keys()
@@ -340,13 +340,13 @@ def cmd_test(args: argparse.Namespace) -> None:
         "email": "test-jwt-suite@example.com",
         "org_id": org_id,
         "workspace_id": org_id,
-        "aud": ["opendesk-auth", "test-product"],
+        "aud": ["deskid", "test-product"],
         "roles": {"test-product": "admin"},
         "iss": base_url,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=15)).timestamp()),
     }
-    token = jwt.encode(payload, priv_pem, algorithm="RS256", headers={"kid": jwk.get("kid", "opendesk-auth-1")})
+    token = jwt.encode(payload, priv_pem, algorithm="RS256", headers={"kid": jwk.get("kid", "deskid-1")})
     print(f"    {Colors.GREEN}✓ Token signed with RS256: {token[:35]}...{Colors.RESET}")
 
     # Step 4: Verify Token against remote JWKS
@@ -357,7 +357,7 @@ def cmd_test(args: argparse.Namespace) -> None:
         remote_key,
         algorithms=["RS256"],
         issuer=base_url,
-        audience="opendesk-auth",
+        audience="deskid",
     )
     assert decoded["sub"] == sub_id
     print(f"    {Colors.GREEN}✓ Token verified against JWKS public key!{Colors.RESET}")
@@ -388,7 +388,7 @@ def cmd_test(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="OpenDesk Auth JWT Utility")
+    parser = argparse.ArgumentParser(description="DeskID JWT Utility")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # 1. generate
@@ -400,7 +400,7 @@ def main() -> None:
     gen_parser.add_argument("--aud", help="Comma-separated product audiences")
     gen_parser.add_argument("--roles", help="JSON string or comma-separated audience:role pairs")
     gen_parser.add_argument("--exp-minutes", type=int, default=60, help="Expiration in minutes (default: 60)")
-    gen_parser.add_argument("--kid", help="Key ID header (default: opendesk-auth-1)")
+    gen_parser.add_argument("--kid", help="Key ID header (default: deskid-1)")
     gen_parser.add_argument("--iss", help="Issuer URL (defaults to AUTH_ISSUER)")
     gen_parser.add_argument("--priv-key", help="Path to private.pem")
     gen_parser.add_argument("--pub-key", help="Path to public.pem")

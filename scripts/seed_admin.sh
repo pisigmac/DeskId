@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OpenDesk Auth — Admin Bootstrap & User Seeding Utility (seed_admin.sh)
+# DeskID — Admin Bootstrap & User Seeding Utility (seed_admin.sh)
 # ==============================================================================
 # Registers the initial platform administrator account and verifies login.
 # ==============================================================================
@@ -75,12 +75,12 @@ done
 
 # Check if server is running
 if ! curl -s "${BASE_URL}/health" >/dev/null 2>&1; then
-    echo -e "${RED}Error: OpenDesk Auth service is not responding at ${BASE_URL}.${NC}"
+    echo -e "${RED}Error: DeskID service is not responding at ${BASE_URL}.${NC}"
     echo "Please start the service first using ./start_all.sh"
     exit 1
 fi
 
-echo -e "${BLUE}${BOLD}=== OpenDesk Auth Platform Admin Setup ===${NC}\n"
+echo -e "${BLUE}${BOLD}=== DeskID Platform Admin Setup ===${NC}\n"
 
 # Prompt for values if not passed
 if [ -z "${ADMIN_EMAIL}" ]; then

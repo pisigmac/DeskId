@@ -7,27 +7,27 @@
   <title>DeskID — Self-Hosted Identity Infrastructure for Multi-Product SaaS</title>
   <meta name="title" content="DeskID — Self-Hosted Identity Infrastructure for Multi-Product SaaS" />
   <meta name="description" content="Product-agnostic, self-hosted RS256 JWT & JWKS identity engine. Replace expensive per-MAU SaaS auth vendors with zero lock-in." />
-  <meta name="keywords" content="auth, identity provider, JWT, RS256, JWKS, self-hosted auth, authentication microservice, OAuth2, multi-tenant auth, RBAC, FastAPI, OpenDesk" />
-  <meta name="author" content="OpenDesk Team" />
+  <meta name="keywords" content="auth, identity provider, JWT, RS256, JWKS, self-hosted auth, authentication microservice, OAuth2, multi-tenant auth, RBAC, FastAPI, DeskID" />
+  <meta name="author" content="DeskID Team" />
   <meta name="robots" content="index, follow" />
-  <link rel="canonical" href="https://auth.opendesk.local/" />
+  <link rel="canonical" href="https://auth.deskid.local/" />
 
   <!-- Favicon -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23d97706'/><text x='50' y='68' font-size='60' font-weight='bold' text-anchor='middle' fill='%23ffffff'>O</text></svg>" />
 
   <!-- OpenGraph / Facebook -->
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://auth.opendesk.local/" />
+  <meta property="og:url" content="https://auth.deskid.local/" />
   <meta property="og:title" content="DeskID — Self-Hosted Identity Infrastructure for Multi-Product SaaS" />
   <meta property="og:description" content="Decoupled RS256 JWT authentication engine with stateless JWKS verification, multi-tenant orgs, and SOC2-ready audit logging." />
-  <meta property="og:image" content="https://auth.opendesk.local/og-image.png" />
+  <meta property="og:image" content="https://auth.deskid.local/og-image.png" />
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:url" content="https://auth.opendesk.local/" />
+  <meta name="twitter:url" content="https://auth.deskid.local/" />
   <meta name="twitter:title" content="DeskID — Self-Hosted Identity Infrastructure for Multi-Product SaaS" />
   <meta name="twitter:description" content="Decoupled RS256 JWT authentication engine with stateless JWKS verification, multi-tenant orgs, and SOC2-ready audit logging." />
-  <meta name="twitter:image" content="https://auth.opendesk.local/og-image.png" />
+  <meta name="twitter:image" content="https://auth.deskid.local/og-image.png" />
 
   <!-- JSON-LD Structured Data for Google Rich Snippets -->
   <script type="application/ld+json">
@@ -485,7 +485,7 @@
     <div class="container nav-inner">
       <a href="/" class="brand">
         <div class="brand-icon">O</div>
-        <span>OpenDesk <span style="font-weight:400;color:var(--text-muted)">Auth</span></span>
+        <span>DeskID <span style="font-weight:400;color:var(--text-muted)">Auth</span></span>
       </a>
       <ul class="nav-links">
         <li><a href="#features">Features</a></li>
@@ -538,8 +538,8 @@
 pip install deskid
 
 <span class="code-cm"># 2. Configure production RSA keys & issuer</span>
-<span class="code-kw">export</span> AUTH_DATABASE_URL=<span class="code-str">"postgresql+psycopg://auth:secret@postgres:5432/opendesk"</span>
-<span class="code-kw">export</span> AUTH_ISSUER=<span class="code-str">"https://auth.opendesk.local"</span>
+<span class="code-kw">export</span> AUTH_DATABASE_URL=<span class="code-str">"postgresql+psycopg://auth:secret@postgres:5432/deskid"</span>
+<span class="code-kw">export</span> AUTH_ISSUER=<span class="code-str">"https://auth.deskid.local"</span>
 <span class="code-kw">export</span> AUTH_JWT_PRIVATE_KEY_FILE=<span class="code-str">"./private.pem"</span>
 
 <span class="code-cm"># 3. Start high-performance uvicorn engine</span>
@@ -547,9 +547,9 @@ deskid
 <span class="code-cm"># Health check: /health</span>
         </div>
         <div class="code-panel" id="code-sdk" style="display:none;">
-<span class="code-kw">import</span> { OpenDeskAuth } <span class="code-kw">from</span> <span class="code-str">'./client'</span>;
+<span class="code-kw">import</span> { DeskID } <span class="code-kw">from</span> <span class="code-str">'./client'</span>;
 
-<span class="code-kw">const</span> auth = <span class="code-kw">new</span> OpenDeskAuth({ baseUrl: window.location.origin });
+<span class="code-kw">const</span> auth = <span class="code-kw">new</span> DeskID({ baseUrl: window.location.origin });
 
 <span class="code-cm">// Authenticate user and receive RS256 JWT tokens</span>
 <span class="code-kw">const</span> session = <span class="code-kw">await</span> auth.login({
@@ -561,10 +561,10 @@ console.log(<span class="code-str">'Issued JWT Access Token:'</span>, session.da
         </div>
         <div class="code-panel" id="code-jwks" style="display:none;">
 <span class="code-cm">// Sibling microservices validate tokens locally without querying DB</span>
-<span class="code-kw">const</span> JWKS = jose.createRemoteJWKSet(<span class="code-kw">new</span> URL(<span class="code-str">'https://auth.opendesk.local/.well-known/jwks.json'</span>));
+<span class="code-kw">const</span> JWKS = jose.createRemoteJWKSet(<span class="code-kw">new</span> URL(<span class="code-str">'https://auth.deskid.local/.well-known/jwks.json'</span>));
 
 <span class="code-kw">const</span> { payload } = <span class="code-kw">await</span> jose.jwtVerify(token, JWKS, {
-  issuer: <span class="code-str">'https://auth.opendesk.local'</span>,
+  issuer: <span class="code-str">'https://auth.deskid.local'</span>,
   audience: <span class="code-str">'paydeck'</span> <span class="code-cm">// Verifies product audience grant</span>
 });
 

@@ -256,5 +256,5 @@ export class DeskID {
   }
 }
 
-export { DeskID as DeskIDClient, DeskID as DeskIDAuth, DeskID as OpenDeskAuth, DeskID as DeskAuth, DeskID as PisigmaAuth }
+export { DeskID as DeskIDClient, DeskID as DeskIDAuth, DeskID as DeskID, DeskID as DeskAuth, DeskID as PisigmaAuth }
 

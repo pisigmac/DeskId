@@ -1,14 +1,14 @@
-# OpenDesk Auth Public UI — Design Specification
+# DeskID Public UI — Design Specification
 
 **Date**: 2026-08-25  
-**Scope**: Public authentication UI screens (`static/auth.html`) for OpenDesk Auth  
+**Scope**: Public authentication UI screens (`static/auth.html`) for DeskID  
 **Status**: Approved  
 
 ---
 
 ## 1. Overview
 
-OpenDesk Auth requires a production-ready, highly polished public authentication UI for multi-product SaaS deployments. This document details the visual design, user flows, architecture, and API integration for `static/auth.html`, which will host Login, Register, Forgot Password, Reset Password, Email Verification, and OAuth callback screens.
+DeskID requires a production-ready, highly polished public authentication UI for multi-product SaaS deployments. This document details the visual design, user flows, architecture, and API integration for `static/auth.html`, which will host Login, Register, Forgot Password, Reset Password, Email Verification, and OAuth callback screens.
 
 ---
 
@@ -59,9 +59,9 @@ The application will use window hash routes to render the relevant screen state 
 
 ### 4.1 Left Brand Panel (Desktop)
 - Logo icon: Clean SVG keymark/lock badge.
-- Brand Title: `OPENDESK AUTH`
+- Brand Title: `DESKID`
 - Subtitle: `Secure identity infrastructure`
-- Footer badge: `OpenDesk Identity v1.0`
+- Footer badge: `DeskID Identity v1.0`
 
 ### 4.2 Login View (`#login`)
 - **Inputs**: Email (`type="email"`), Password (`type="password"` with show/hide toggle).
@@ -97,7 +97,7 @@ The application will use window hash routes to render the relevant screen state 
 Per `AGENTS.md` system rules:
 1. **URL Fragment Security**: OAuth state callback processes tokens passed via URL fragment (`#access_token=...`), never query strings.
 2. **Error Envelope Standard**: Parses all server API errors using standard format `{error: string, code: string, request_id: string}`.
-3. **No Hardcoded Product Names**: UI remains product-agnostic for OpenDesk Auth.
+3. **No Hardcoded Product Names**: UI remains product-agnostic for DeskID.
 
 ---
 

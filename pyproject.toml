@@ -35,7 +35,6 @@ postgres = ["psycopg[binary]>=3.1"]
 [project.scripts]
 deskid = "deskid.cli:main"
 desk-id = "deskid.cli:main"
-opendesk-auth = "deskid.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OpenDesk Auth — End-to-End Test Utility (curl-based)
+# DeskID — End-to-End Test Utility (curl-based)
 # ==============================================================================
-# This script starts the OpenDesk Auth server on a test port, executes an
+# This script starts the DeskID server on a test port, executes an
 # end-to-end suite of curl commands against all core endpoints, and shuts down
 # the server process on completion (or on failure/SIGINT).
 # ==============================================================================
@@ -25,7 +25,7 @@ if [ -z "${TEST_HOST}" ]; then
     TEST_HOST="127.0.0.1"
 fi
 BASE_URL="http://${TEST_HOST}:${TEST_PORT}"
-TMP_DIR="$(mktemp -d /tmp/opendesk_e2e.XXXXXX)"
+TMP_DIR="$(mktemp -d /tmp/deskid_e2e.XXXXXX)"
 DB_PATH="${TMP_DIR}/test.db"
 KEY_PRIV="${TMP_DIR}/private.pem"
 KEY_PUB="${TMP_DIR}/public.pem"
@@ -44,9 +44,9 @@ NC='\033[0m'
 
 # Cleanup handler
 cleanup() {
-    echo -e "\n${YELLOW}=== Tearing down OpenDesk Auth test environment ===${NC}"
+    echo -e "\n${YELLOW}=== Tearing down DeskID test environment ===${NC}"
     if [ -n "${SERVER_PID}" ] && kill -0 "${SERVER_PID}" 2>/dev/null; then
-        echo "Stopping OpenDesk Auth server (PID: ${SERVER_PID})..."
+        echo "Stopping DeskID server (PID: ${SERVER_PID})..."
         kill "${SERVER_PID}" || true
         wait "${SERVER_PID}" 2>/dev/null || true
         echo "Server stopped."
@@ -80,16 +80,16 @@ assert_status() {
 # 1. Setup Keys and Environment
 # ------------------------------------------------------------------------------
 echo -e "${BOLD}=====================================================${NC}"
-echo -e "${BOLD}    OpenDesk Auth — End-to-End Curl Test Utility    ${NC}"
+echo -e "${BOLD}    DeskID — End-to-End Curl Test Utility    ${NC}"
 echo -e "${BOLD}=====================================================${NC}"
 
 log_step "Generating temporary RSA keypair for JWT signing..."
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "${KEY_PRIV}" 2>/dev/null
 openssl rsa -in "${KEY_PRIV}" -pubout -out "${KEY_PUB}" 2>/dev/null
 
-log_step "Starting OpenDesk Auth server on ${BASE_URL}..."
+log_step "Starting DeskID server on ${BASE_URL}..."
 export AUTH_DATABASE_URL="sqlite+pysqlite:///${DB_PATH}"
-export AUTH_ISSUER="https://auth.opendesk.local"
+export AUTH_ISSUER="https://auth.deskid.local"
 export AUTH_HOST="${TEST_HOST}"
 export AUTH_PORT="${TEST_PORT}"
 export AUTH_OPEN_REGISTRATION="false"
@@ -211,7 +211,7 @@ log_step "Testing POST /v1/orgs (Create Org)..."
 ORG_RES=$(curl -s -w "\n%{http_code}" -X POST "${BASE_URL}/v1/orgs" \
     -H "Authorization: Bearer ${NEW_ACCESS_TOKEN}" \
     -H "Content-Type: application/json" \
-    -d "{\"name\": \"OpenDesk Engineering\"}")
+    -d "{\"name\": \"DeskID Engineering\"}")
 
 ORG_BODY=$(echo "${ORG_RES}" | head -n1)
 ORG_CODE=$(echo "${ORG_RES}" | tail -n1)
@@ -233,7 +233,7 @@ log_step "Testing POST /v1/admin/grants (Set Product Grant)..."
 GRANT_RES=$(curl -s -w "\n%{http_code}" -X POST "${BASE_URL}/v1/admin/grants" \
     -H "Authorization: Bearer ${NEW_ACCESS_TOKEN}" \
     -H "Content-Type: application/json" \
-    -d "{\"user_id\": \"${ADMIN_ID}\", \"audience\": \"opendesk-analytics\", \"role\": \"admin\"}")
+    -d "{\"user_id\": \"${ADMIN_ID}\", \"audience\": \"deskid-analytics\", \"role\": \"admin\"}")
 
 GRANT_CODE=$(echo "${GRANT_RES}" | tail -n1)
 assert_status 200 "${GRANT_CODE}" "POST /v1/admin/grants"

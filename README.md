@@ -20,7 +20,7 @@ DeskID is a high-performance, product-agnostic authentication and identity micro
 ## Quick start
 
 ```bash
-cd OpenDesk
+cd DeskID
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
@@ -61,7 +61,7 @@ Example claims (after granting audience `myproduct`):
   "workspace_id": "…",
   "aud": ["myproduct"],
   "roles": { "myproduct": "operator" },
-  "iss": "https://auth.opendeskauth.local"
+  "iss": "https://auth.deskid.local"
 }
 ```
 

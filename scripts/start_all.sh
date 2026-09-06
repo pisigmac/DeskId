@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OpenDesk Auth — Service Startup Utility (start_all.sh)
+# DeskID — Service Startup Utility (start_all.sh)
 # ==============================================================================
-# Starts all required OpenDesk Auth services (database, migrations, auth server).
+# Starts all required DeskID services (database, migrations, auth server).
 # Supports both Local Python/SQLite mode and Docker Compose mode.
 # ==============================================================================
 
@@ -106,7 +106,7 @@ if [ -z "${HOST}" ] || [ -z "${PORT}" ]; then
 fi
 
 echo -e "${BLUE}${BOLD}======================================================${NC}"
-echo -e "${BLUE}${BOLD}        🚀 Starting OpenDesk Auth Infrastructure       ${NC}"
+echo -e "${BLUE}${BOLD}        🚀 Starting DeskID Infrastructure       ${NC}"
 echo -e "${BLUE}${BOLD}======================================================${NC}"
 
 # Ensure RSA Keys exist
@@ -168,7 +168,7 @@ else
     if [ -f "${PID_FILE}" ]; then
         EXISTING_PID="$(cat "${PID_FILE}" 2>/dev/null || true)"
         if [ -n "${EXISTING_PID}" ] && kill -0 "${EXISTING_PID}" 2>/dev/null; then
-            echo -e "${YELLOW}Warning: OpenDesk Auth is already running (PID: ${EXISTING_PID}).${NC}"
+            echo -e "${YELLOW}Warning: DeskID is already running (PID: ${EXISTING_PID}).${NC}"
             echo -e "Use ${BOLD}./stop_all.sh${NC} or ${BOLD}./restart_all.sh${NC} to restart."
             exit 0
         fi
@@ -179,7 +179,7 @@ else
     bash "${SCRIPT_DIR}/run_migrations.sh" >/dev/null 2>&1 || python3 "${ROOT_DIR}/migrations/run_migrations.py"
     echo -e "${GREEN}✓ Database initialized and migrated.${NC}"
 
-    echo -e "\n${BLUE}Starting OpenDesk Auth service process...${NC}"
+    echo -e "\n${BLUE}Starting DeskID service process...${NC}"
     if [ "${RUN_FOREGROUND}" = true ]; then
         exec python3 -m uvicorn deskid.app:app --host "${HOST}" --port "${PORT}"
     else

@@ -22,7 +22,7 @@ Health: `http://127.0.0.1:8090/health`. OpenAPI: `http://127.0.0.1:8090/docs`.
 ## How to run
 
 ```bash
-cd OpenDesk
+cd DeskID
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"          # add .[postgres] for Postgres
 cp .env.example .env             # AUTH_DATABASE_URL + AUTH_ISSUER required
@@ -42,7 +42,7 @@ Env prefix is `AUTH_`. Settings live in `src/deskid/config.py` (`pydantic-settin
 ## Mental model
 
 ```
-Client / SDK (client.ts OpenDesk Auth)
+Client / SDK (client.ts DeskID)
         │  HTTP JSON
         ▼
 FastAPI app (app.py create_app)
@@ -71,13 +71,13 @@ Issued by `crypto.issue_access_token`:
 | `email` | `User.email` |
 | `org_id` | Primary membership (first `owner`, else first membership) |
 | `workspace_id` | That membership's `workspace_id` (defaults to org id) |
-| `aud` | Always `["opendesk-auth", ...product audiences from grants]` |
+| `aud` | Always `["deskid", ...product audiences from grants]` |
 | `roles` | `{ audience: role }` from `ProductGrant` |
 | `iss` | `AUTH_ISSUER` |
 | `iat` / `exp` | now / now + `AUTH_ACCESS_TOKEN_MINUTES` (default 60) |
-| header `kid` | `AUTH_JWT_KID` (default `opendesk-auth-1`) |
+| header `kid` | `AUTH_JWT_KID` (default `deskid-1`) |
 
-Auth's own routes decode with `audience="opendesk-auth"`. Product services should decode with their own audience.
+Auth's own routes decode with `audience="deskid"`. Product services should decode with their own audience.
 
 Refresh tokens are opaque `token_urlsafe(48)`, stored as SHA-256 hex, single-use (revoked on rotate). Not JWTs. Lifetime `AUTH_REFRESH_TOKEN_DAYS` (default 30).
 
@@ -126,7 +126,7 @@ Public (no JWT):
 | GET | `/v1/oauth/{google,github}/start` | 501 if client_id empty |
 | GET | `/v1/oauth/{google,github}/callback` | |
 
-Bearer JWT (`aud` must include `opendesk-auth`):
+Bearer JWT (`aud` must include `deskid`):
 
 | Method | Path |
 |--------|------|
@@ -152,7 +152,7 @@ Rate-limit buckets (in-process memory, per IP): `login`, `register`, `password_r
 
 Audit actions emitted: `user.register`, `user.login`, `user.logout` (actor_id often null), `user.verify_email`, `user.forgot_password`, `user.reset_password`, `user.update_profile`, `user.change_password`, `user.revoke_session`, `user.delete`, `admin.set_grant`, `admin.suspend_user`, `admin.activate_user`.
 
-### SDK (`client.ts` → `OpenDesk Auth`)
+### SDK (`client.ts` → `DeskID`)
 
 Re-exported from `Tools/sdk/index.ts`. Covers register/login/refresh/logout/me/verify/forgot/reset/export/delete/listUsers/setGrant/queryAuditLog/checkHealth.
 
@@ -172,7 +172,7 @@ Re-exported from `Tools/sdk/index.ts`. Covers register/login/refresh/logout/me/v
 
 ## Config cheat sheet
 
-Required: `AUTH_DATABASE_URL`, `AUTH_ISSUER`, and for `opendesk-auth` CLI also `AUTH_HOST`, `AUTH_PORT`. JWT PEM or `*_FILE`.
+Required: `AUTH_DATABASE_URL`, `AUTH_ISSUER`, and for `deskid` CLI also `AUTH_HOST`, `AUTH_PORT`. JWT PEM or `*_FILE`.
 
 Important defaults (in `config.py`, not all listed in `.env.example`):
 
@@ -184,7 +184,7 @@ Important defaults (in `config.py`, not all listed in `.env.example`):
 | `password_min_length` | `8` | Uppercase/digit flags default off |
 | `access_token_minutes` | `60` | |
 | `refresh_token_days` | `30` | |
-| `jwt_kid` | `opendesk-auth-1` | Single key, no rotation set |
+| `jwt_kid` | `deskid-1` | Single key, no rotation set |
 | `introspection_api_key` | `""` | Empty disables `/introspect` |
 | `cors_origins` | `""` | Empty = no browser CORS |
 | `default_audiences` | `""` | Auto-grant on signup |

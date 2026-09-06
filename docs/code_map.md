@@ -1,11 +1,11 @@
 # DeskID — Code Map
  
-Companion to `AGENTS.md`. Use this instead of listing directories. Paths are relative to `OpenDesk/`.
+Companion to `AGENTS.md`. Use this instead of listing directories. Paths are relative to `DeskID/`.
 
 ## Directory tree
 
 ```
-OpenDesk/
+DeskID/
 ├── AGENTS.md                 Agent context (read first)
 ├── code_map.md               This file
 ├── gaps_enhancements.md      Current features and remaining gaps
@@ -42,7 +42,7 @@ Untracked local secrets often present: `private.pem`, `public.pem`, `.env`. Do n
 
 ### `src/deskid/cli.py`
 
-`opendesk-auth` entry. Requires `AUTH_HOST` and `AUTH_PORT`. `uvicorn.run("deskid.app:app", ...)`.
+`deskid` entry. Requires `AUTH_HOST` and `AUTH_PORT`. `uvicorn.run("deskid.app:app", ...)`.
 
 ### `src/deskid/config.py`
 
@@ -60,7 +60,7 @@ Untracked local secrets often present: `private.pem`, `public.pem`, `.env`. Do n
 | `spa_callback_url` | | `""` | OAuth fragment target + mail link base |
 | `jwt_private_key` / `jwt_public_key` | | `""` | Inline PEM, `\n` unescaped |
 | `jwt_private_key_file` / `jwt_public_key_file` | | `""` | |
-| `jwt_kid` | | `opendesk-auth-1` | |
+| `jwt_kid` | | `deskid-1` | |
 | `google_*` / `github_*` | | `""` | Empty client_id disables provider |
 | `host` / `port` | | `""` / `None` | Required to start CLI |
 | `default_audiences` / `default_role` | | `""` / `operator` | |
@@ -113,7 +113,7 @@ Pydantic v2 request/response models. `RegisterRequest.password` and `ResetPasswo
 - `generate_urlsafe_token` / `new_refresh_token` — `secrets.token_urlsafe`.
 - `_ensure_keys` — cached; **raises** if PEMs missing (no ephemeral generation).
 - `public_jwk()` — RSA JWK `kty/use/alg/kid/n/e`.
-- `issue_access_token` — RS256, `aud = ["opendesk-auth", *audiences]`. No `jti`, `nbf`, `azp`.
+- `issue_access_token` — RS256, `aud = ["deskid", *audiences]`. No `jti`, `nbf`, `azp`.
 - `decode_access_token(token, audience=None)` — verifies `iss`; `verify_aud` only if `audience` passed. `/introspect` calls it **without** audience.
 
 ### `src/deskid/services.py`
@@ -171,7 +171,7 @@ Re-exports six routers.
 
 ### `src/deskid/routes/auth.py`
 
-Prefix `/auth` (mounted at `/v1`). `current_user` decodes JWT with `audience="opendesk-auth"`, loads user, rejects inactive.
+Prefix `/auth` (mounted at `/v1`). `current_user` decodes JWT with `audience="deskid"`, loads user, rejects inactive.
 
 Endpoints: register, login, refresh, logout, GET/PATCH me, verify-email, forgot/reset-password, change-password, list/revoke sessions.
 
@@ -236,7 +236,7 @@ No per-request call to Auth is required. `/introspect` is optional for opaque ch
 
 Fixture: tmp SQLite, generated RSA, `AUTH_OPEN_REGISTRATION=true`, `AUTH_REQUIRE_EMAIL_VERIFICATION=false`, `AUTH_DEFAULT_AUDIENCES=demo-app`.
 
-Covered: register/login/me/jwks, orgs/grants, OAuth unconfigured 501, introspect + API key gate, no product coupling in defaults, models, token helpers, fail-closed keys, schemas, mail payload builders, token lifecycle, rate limiter (allow/block, XFF trust/untrust, login/register/refresh/verify/reset), email send + verify + reset flows, request-id, audit emit + admin query + filters + grant audit, GDPR export/delete, `aud` includes `opendesk-auth`, login blocked until verify, lockout + reset + expiry, closed registration + bootstrap token, register without tokens when verify required, OAuth cannot take over unverified email, refresh blocked when suspended, config required fields, mail failure logged.
+Covered: register/login/me/jwks, orgs/grants, OAuth unconfigured 501, introspect + API key gate, no product coupling in defaults, models, token helpers, fail-closed keys, schemas, mail payload builders, token lifecycle, rate limiter (allow/block, XFF trust/untrust, login/register/refresh/verify/reset), email send + verify + reset flows, request-id, audit emit + admin query + filters + grant audit, GDPR export/delete, `aud` includes `deskid`, login blocked until verify, lockout + reset + expiry, closed registration + bootstrap token, register without tokens when verify required, OAuth cannot take over unverified email, refresh blocked when suspended, config required fields, mail failure logged.
 
 Not covered: OAuth happy path, PATCH me, change-password, session list/revoke, SDK, multi-worker rate limit, key rotation, org member edge cases.
 
@@ -269,6 +269,6 @@ Not covered: OAuth happy path, PATCH me, change-password, session list/revoke, S
 | Outbound | Mail service | `mail_client.send_mail` → `POST /v1/send` |
 | Outbound | Google / GitHub | `httpx` in `oauth_providers.py` |
 | Inbound | Product services | JWKS + JWT |
-| Inbound | TS apps | `Tools/sdk` → `OpenDesk Auth` |
+| Inbound | TS apps | `Tools/sdk` → `DeskID` |
 | Not wired | MFA, SSO, RBAC, AuditLogs | — |
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OpenDesk Auth — Service Status & Diagnostics Dashboard (status.sh)
+# DeskID — Service Status & Diagnostics Dashboard (status.sh)
 # ==============================================================================
 
 set -euo pipefail
@@ -33,7 +33,7 @@ if [ -z "${BASE_URL}" ] && [ -n "${HOST}" ]; then
     BASE_URL="http://${HOST}:${PORT}"
 fi
 
-echo -e "${BLUE}${BOLD}=== OpenDesk Auth Service Status & Diagnostics ===${NC}\n"
+echo -e "${BLUE}${BOLD}=== DeskID Service Status & Diagnostics ===${NC}\n"
 
 # 1. Process & Container Status
 echo -e "${BOLD}[1] Process & Container Status:${NC}"

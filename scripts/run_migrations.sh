@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OpenDesk Auth — Migration Runner Wrapper
+# DeskID — Migration Runner Wrapper
 # ==============================================================================
 
 set -euo pipefail

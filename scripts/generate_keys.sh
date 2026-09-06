@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OpenDesk Auth — RSA Key & Secret Generator
+# DeskID — RSA Key & Secret Generator
 # ==============================================================================
 # Generates 2048-bit RSA private and public key PEM files required for
 # token signing and JWKS verification, plus random bootstrap/introspection keys.
@@ -21,7 +21,7 @@ YELLOW='\033[0;33m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-echo -e "${BLUE}${BOLD}=== OpenDesk Auth Key & Secret Generator ===${NC}"
+echo -e "${BLUE}${BOLD}=== DeskID Key & Secret Generator ===${NC}"
 
 if ! command -v openssl >/dev/null 2>&1; then
     echo -e "${YELLOW}Error: openssl command not found. Please install OpenSSL.${NC}"

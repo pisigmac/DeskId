@@ -15,4 +15,4 @@ Disallow: /v1/auth/
 Disallow: /v1/orgs/
 Disallow: /introspect
 
-Sitemap: https://auth.opendesk.local/sitemap.xml
+Sitemap: https://auth.deskid.local/sitemap.xml
