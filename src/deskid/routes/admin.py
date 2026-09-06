@@ -157,6 +157,7 @@ def query_audit_log(
                 "resource_id": e.resource_id,
                 "ip_address": e.ip_address,
                 "user_agent": e.user_agent,
+                "previous_hash": e.previous_hash,
                 "integrity_hash": e.integrity_hash,
                 "details": e.details,
             }

@@ -349,11 +349,21 @@ def reset_user_password(db: Session, user: User, password: str) -> None:
 # Audit log
 # ---------------------------------------------------------------------------
 
-def _audit_integrity_hash(*, action: str, actor_type: str, actor_id: str | None, resource_type: str, resource_id: str | None, details: str | None) -> str:
+def _audit_integrity_hash(
+    *,
+    previous_hash: str | None,
+    action: str,
+    actor_type: str,
+    actor_id: str | None,
+    resource_type: str,
+    resource_id: str | None,
+    details: str | None,
+) -> str:
     import hashlib
 
     payload = "|".join(
         [
+            previous_hash or "GENESIS",
             action,
             actor_type,
             actor_id or "",
@@ -377,6 +387,13 @@ def emit_audit(
     user_agent: str | None = None,
     details: dict | None = None,
 ) -> None:
+    last_event = (
+        db.query(AuditLogEvent)
+        .order_by(AuditLogEvent.occurred_at.desc(), AuditLogEvent.id.desc())
+        .first()
+    )
+    prev_hash = last_event.integrity_hash if last_event else "GENESIS"
+
     event = AuditLogEvent(
         actor_type=actor_type,
         actor_id=actor_id,
@@ -386,8 +403,10 @@ def emit_audit(
         ip_address=ip_address,
         user_agent=user_agent,
         details=json.dumps(details) if details else None,
+        previous_hash=prev_hash,
     )
     event.integrity_hash = _audit_integrity_hash(
+        previous_hash=event.previous_hash,
         action=event.action,
         actor_type=event.actor_type,
         actor_id=event.actor_id,
@@ -449,6 +468,8 @@ def export_user_data(db: Session, user: User) -> dict:
                 "action": e.action,
                 "occurred_at": e.occurred_at.isoformat(),
                 "details": e.details,
+                "previous_hash": e.previous_hash,
+                "integrity_hash": e.integrity_hash,
             }
             for e in audit_events
         ],

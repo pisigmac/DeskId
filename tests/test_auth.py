@@ -1585,12 +1585,22 @@ def test_audit_is_append_only_and_hashed(client):
     from sqlalchemy.orm import Session
 
     admin = client.post("/v1/auth/register", json={"email": "audhash@example.com", "password": "password123"}).json()
-    r = client.get("/v1/admin/audit?limit=1", headers={"Authorization": f"Bearer {admin['access_token']}"})
+    # Trigger another audit event by logging in
+    client.post(
+        "/v1/auth/login",
+        json={"email": "audhash@example.com", "password": "password123"},
+    )
+
+    r = client.get("/v1/admin/audit?limit=10", headers={"Authorization": f"Bearer {admin['access_token']}"})
     assert r.status_code == 200
-    event = r.json()["events"][0]
-    assert event["integrity_hash"]
+    events = r.json()["events"]
+    assert len(events) >= 2
+    # events are ordered desc by occurred_at, so events[0] is newest and events[1] is older
+    assert events[0]["integrity_hash"]
+    assert events[0]["previous_hash"] == events[1]["integrity_hash"]
+
     session = Session(get_engine())
-    row = session.get(AuditLogEvent, event["id"])
+    row = session.get(AuditLogEvent, events[0]["id"])
     try:
         row.action = "tamper"
         session.commit()
