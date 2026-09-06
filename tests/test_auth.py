@@ -1577,3 +1577,74 @@ def test_audit_is_append_only_and_hashed(client):
         session.rollback()
     finally:
         session.close()
+
+
+def test_jwks_rotation_and_historical_keys(monkeypatch):
+    import json
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from deskid.config import get_settings
+    from deskid.crypto import decode_access_token, public_jwks, _ensure_keys
+    from fastapi.testclient import TestClient
+    from deskid.app import create_app
+
+    # Generate old key pair
+    old_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    old_priv_pem = old_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode()
+    old_pub_pem = old_key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+
+    # Generate current key pair
+    new_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    new_priv_pem = new_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode()
+    new_pub_pem = new_key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+
+    # Configure server with new active key and old key in previous_keys
+    prev_keys_json = json.dumps([{"kid": "deskid-old-1", "public_key": old_pub_pem}])
+    monkeypatch.setenv("AUTH_DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("AUTH_ISSUER", "https://auth.test.local")
+    monkeypatch.setenv("AUTH_JWT_PRIVATE_KEY", new_priv_pem)
+    monkeypatch.setenv("AUTH_JWT_PUBLIC_KEY", new_pub_pem)
+    monkeypatch.setenv("AUTH_JWT_KID", "deskid-new-2")
+    monkeypatch.setenv("AUTH_JWT_PREVIOUS_PUBLIC_KEYS", prev_keys_json)
+    get_settings.cache_clear()
+    _ensure_keys.cache_clear()
+
+    # Sign a token with the OLD private key and kid deskid-old-1
+    old_token = jwt.encode(
+        {"sub": "user_old", "email": "old@example.com", "iss": "https://auth.test.local", "aud": ["deskid"]},
+        old_priv_pem,
+        algorithm="RS256",
+        headers={"kid": "deskid-old-1"},
+    )
+
+    # Server should successfully decode the old token
+    decoded = decode_access_token(old_token)
+    assert decoded["sub"] == "user_old"
+
+    # JWKS endpoint should advertise both keys
+    app = create_app()
+    with TestClient(app) as test_client:
+        jwks_resp = test_client.get("/.well-known/jwks.json")
+        assert jwks_resp.status_code == 200
+        keys = jwks_resp.json()["keys"]
+        assert len(keys) == 2
+        kids = [k["kid"] for k in keys]
+        assert "deskid-new-2" in kids
+        assert "deskid-old-1" in kids
+
+    get_settings.cache_clear()
+    _ensure_keys.cache_clear()

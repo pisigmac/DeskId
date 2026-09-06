@@ -8,7 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from deskid.config import get_settings
-from deskid.crypto import decode_access_token, public_jwk
+from deskid.crypto import decode_access_token, public_jwks
 from deskid.db import get_db
 from deskid.models import User
 from deskid.schemas import IntrospectRequest, IntrospectResponse
@@ -36,7 +36,7 @@ def _require_introspection_auth(
 
 @router.get("/.well-known/jwks.json")
 def jwks() -> dict:
-    return {"keys": [public_jwk()]}
+    return {"keys": public_jwks()}
 
 
 @router.post("/introspect", response_model=IntrospectResponse)

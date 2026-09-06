@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     jwt_private_key_file: str = ""
     jwt_public_key_file: str = ""
     jwt_kid: str = "deskid-1"
+    jwt_previous_public_keys: str = ""
+    jwt_previous_public_keys_file: str = ""
 
     # OAuth provider credentials — empty means the provider is disabled.
     google_client_id: str = ""
@@ -152,6 +154,39 @@ class Settings(BaseSettings):
         if self.jwt_public_key_file:
             return Path(self.jwt_public_key_file).read_text(encoding="utf-8")
         return ""
+
+    def previous_public_keys(self) -> list[tuple[str, str]]:
+        """Return list of (kid, pem) for historical keys used for verification."""
+        import json
+
+        raw = ""
+        if self.jwt_previous_public_keys.strip():
+            raw = self.jwt_previous_public_keys.strip()
+        elif self.jwt_previous_public_keys_file:
+            path = Path(self.jwt_previous_public_keys_file)
+            if path.exists():
+                raw = path.read_text(encoding="utf-8").strip()
+
+        if not raw:
+            return []
+
+        try:
+            parsed = json.loads(raw)
+            keys: list[tuple[str, str]] = []
+            if isinstance(parsed, dict):
+                for kid, pem in parsed.items():
+                    if isinstance(pem, str):
+                        keys.append((str(kid), pem.replace("\\n", "\n")))
+            elif isinstance(parsed, list):
+                for item in parsed:
+                    if isinstance(item, dict):
+                        kid = item.get("kid", "")
+                        pem = item.get("public_key") or item.get("pem") or ""
+                        if kid and pem:
+                            keys.append((str(kid), str(pem).replace("\\n", "\n")))
+            return keys
+        except Exception:
+            return []
 
 
 @lru_cache

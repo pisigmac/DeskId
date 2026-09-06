@@ -65,9 +65,7 @@ def get_key_material(settings: Settings | None = None) -> tuple[str, str, str]:
     return _ensure_keys(fingerprint)
 
 
-def public_jwk(settings: Settings | None = None) -> dict[str, Any]:
-    settings = settings or get_settings()
-    _, pub_pem, kid = get_key_material(settings)
+def pem_to_jwk(pub_pem: str, kid: str) -> dict[str, Any]:
     pub = serialization.load_pem_public_key(pub_pem.encode("utf-8"))
     numbers = pub.public_numbers()
     return {
@@ -78,6 +76,23 @@ def public_jwk(settings: Settings | None = None) -> dict[str, Any]:
         "n": _b64url_uint(numbers.n),
         "e": _b64url_uint(numbers.e),
     }
+
+
+def public_jwk(settings: Settings | None = None) -> dict[str, Any]:
+    settings = settings or get_settings()
+    _, pub_pem, kid = get_key_material(settings)
+    return pem_to_jwk(pub_pem, kid)
+
+
+def public_jwks(settings: Settings | None = None) -> list[dict[str, Any]]:
+    settings = settings or get_settings()
+    keys = [public_jwk(settings)]
+    for kid, pem in settings.previous_public_keys():
+        try:
+            keys.append(pem_to_jwk(pem, kid))
+        except Exception:
+            pass
+    return keys
 
 
 def issue_access_token(
@@ -111,13 +126,41 @@ def issue_access_token(
 
 def decode_access_token(token: str, audience: str | None = None, settings: Settings | None = None) -> dict[str, Any]:
     settings = settings or get_settings()
-    _, pub, _ = get_key_material(settings)
+    _, current_pub, current_kid = get_key_material(settings)
     options: dict[str, Any] = {"verify_aud": audience is not None}
-    return jwt.decode(
-        token,
-        pub,
-        algorithms=["RS256"],
-        issuer=settings.issuer,
-        audience=audience,
-        options=options,
-    )
+
+    # Extract kid from unverified token header if present
+    target_kid = None
+    try:
+        header = jwt.get_unverified_header(token)
+        target_kid = header.get("kid")
+    except Exception:
+        pass
+
+    # Build list of candidate public keys: [(kid, pem)]
+    candidate_keys: list[tuple[str, str]] = [(current_kid, current_pub)]
+    for prev_kid, prev_pem in settings.previous_public_keys():
+        candidate_keys.append((prev_kid, prev_pem))
+
+    # If target_kid matches one of the candidates, prioritize it
+    if target_kid:
+        candidate_keys.sort(key=lambda item: 0 if item[0] == target_kid else 1)
+
+    last_exc: Exception | None = None
+    for _, pem in candidate_keys:
+        try:
+            return jwt.decode(
+                token,
+                pem,
+                algorithms=["RS256"],
+                issuer=settings.issuer,
+                audience=audience,
+                options=options,
+            )
+        except jwt.InvalidTokenError as exc:
+            last_exc = exc
+            continue
+
+    if last_exc:
+        raise last_exc
+    raise jwt.InvalidTokenError("Could not decode token")
