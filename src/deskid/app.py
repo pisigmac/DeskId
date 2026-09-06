@@ -9,14 +9,14 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from opendesk_auth import __version__
-from opendesk_auth.config import get_settings
-from opendesk_auth.db import check_db_health, get_db, init_db
-from opendesk_auth.middleware import RequestContextMiddleware, get_request_context
-from opendesk_auth.rate_limit import RateLimiter
-from opendesk_auth.routes import admin_router, auth_router, jwks_router, me_router, oauth_router, orgs_router
+from deskid import __version__
+from deskid.config import get_settings
+from deskid.db import check_db_health, get_db, init_db
+from deskid.middleware import RequestContextMiddleware, get_request_context
+from deskid.rate_limit import RateLimiter
+from deskid.routes import admin_router, auth_router, jwks_router, me_router, oauth_router, orgs_router
 
-logger = logging.getLogger("opendesk_auth")
+logger = logging.getLogger("deskid")
 
 
 @asynccontextmanager
@@ -32,9 +32,9 @@ async def lifespan(_: FastAPI):
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
-        title="OpenDesk Auth",
+        title="DeskID",
         version=__version__,
-        description="Shared identity microservice for OpenDesk Auth products (JWKS + OAuth + orgs).",
+        description="DeskID Authentication and Identity microservice module (JWKS + OAuth + orgs).",
         lifespan=lifespan,
     )
     app.state.rate_limiter = RateLimiter(settings)
@@ -84,7 +84,7 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------
     # Health — deep check (DB + key availability)
     # ------------------------------------------------------------------
-    from opendesk_auth.crypto import get_key_material
+    from deskid.crypto import get_key_material
 
     @app.get("/health")
     def health() -> JSONResponse:
@@ -97,21 +97,21 @@ def create_app() -> FastAPI:
 
         ready = db_ok and keys_ok
         body = {
-            "status": "ok" if ready else "degraded",
-            "service": "opendesk-auth",
+            "status": "ok" if (db_ok and keys_ok) else "degraded",
+            "service": "deskid",
             "version": __version__,
-            "checks": {
-                "database": "ok" if db_ok else "error",
-                "jwt_keys": "ok" if keys_ok else "error",
-            },
+            "checks": {"database": db_ok, "keys": keys_ok},
         }
-        return JSONResponse(status_code=200 if ready else 503, content=body)
+        if not (db_ok and keys_ok):
+            return JSONResponse(status_code=503, content=body)
+        return body
 
-    @app.get("/metrics")
-    def metrics() -> dict:
-        from opendesk_auth.metrics import snapshot
+    @app.get("/metrics", tags=["system"])
+    def get_metrics() -> dict[str, Any]:
+        """Internal in-process metrics snapshot."""
+        from deskid.metrics import snapshot
 
-        return {"service": "opendesk-auth", "counters": snapshot()}
+        return {"service": "deskid", "counters": snapshot()}
 
     @app.get("/", include_in_schema=False)
     def landing_page() -> FileResponse:

@@ -100,7 +100,7 @@ export AUTH_JWT_PRIVATE_KEY_FILE="${KEY_PRIV}"
 export AUTH_JWT_PUBLIC_KEY_FILE="${KEY_PUB}"
 export PYTHONPATH="src"
 
-python3 -m opendesk_auth.cli > "${TMP_DIR}/server.log" 2>&1 &
+python3 -m deskid.cli > "${TMP_DIR}/server.log" 2>&1 &
 SERVER_PID=$!
 
 echo "Server started with PID ${SERVER_PID}. Waiting for server readiness..."

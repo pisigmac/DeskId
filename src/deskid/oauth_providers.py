@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from opendesk_auth.config import Settings
+from deskid.config import Settings
 
 
 @dataclass

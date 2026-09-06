@@ -25,7 +25,7 @@ venv/
 *.id_ed25519
 private.pem
 public.pem
-
+dist/
 # Databases
 *.db
 *.sqlite
@@ -36,4 +36,6 @@ public.pem
 .env.local
 *.log
 .superpowers
+run/
+IMPL*.md
 docs/superpowers

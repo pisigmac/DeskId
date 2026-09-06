@@ -8,14 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from opendesk_auth.db import get_db
-from opendesk_auth.middleware import get_request_context
-from opendesk_auth.models import AuditLogEvent, ProductGrant, User
-from opendesk_auth.routes.auth import current_user
-from opendesk_auth.schemas import GrantRequest, SetUserActiveRequest, UserOut
-from opendesk_auth.services import emit_audit, set_user_active, user_to_out
+from deskid.db import get_db
+from deskid.middleware import get_request_context
+from deskid.models import AuditLogEvent, ProductGrant, User
+from deskid.routes.auth import current_user
+from deskid.schemas import GrantRequest, SetUserActiveRequest, UserOut
+from deskid.services import emit_audit, set_user_active, user_to_out
 
-logger = logging.getLogger("opendesk_auth.admin")
+logger = logging.getLogger("deskid.admin")
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 

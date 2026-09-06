@@ -1,8 +1,8 @@
-# Auth — Features & Gaps (Resolved & Hardened)
+# DeskID — Features & Gaps (Resolved & Hardened)
 
 > **Audit Date:** 2026-08-25 · **Status:** All core P0 and P1 gaps resolved; Full Auth UI & Devops utilities shipped.  
-> **Scope:** OpenDesk Auth (`src/opendesk_auth`, `client.ts`, `static/`, `scripts/`, `tests/`, `migrations/`, deploy files).  
-> **Test Suite:** 67/67 passing tests (`pytest tests/ -v`).
+> **Scope:** DeskID (`src/deskid`, `client.ts`, `static/`, `scripts/`, `tests/`, `migrations/`, deploy files).  
+> **Test Suite:** 70/70 passing tests (`pytest tests/ -v`).
 
 Read with [`AGENTS.md`](AGENTS.md) (invariants) and [`code_map.md`](code_map.md) (file map).
 
@@ -10,7 +10,7 @@ Read with [`AGENTS.md`](AGENTS.md) (invariants) and [`code_map.md`](code_map.md)
 
 ## 1. Product Position & Architecture
 
-Auth is a **high-performance, product-agnostic identity microservice** for OpenDesk. It issues RS256 JWTs that consumer product backends validate locally and statelessly via JWKS (`/.well-known/jwks.json`). Product access is managed through granular product grants (`audience` + role), avoiding hardcoded product dependencies.
+DeskID is a **high-performance, product-agnostic authentication and identity microservice module**. It issues RS256 JWTs that consumer product backends validate locally and statelessly via JWKS (`/.well-known/jwks.json`). Product access is managed through granular product grants (`audience` + role), avoiding hardcoded product dependencies.
 
 ---
 

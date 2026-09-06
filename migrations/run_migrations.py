@@ -19,10 +19,10 @@ from pathlib import Path
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import ProgrammingError, OperationalError
 
-# Allow importing opendesk_auth when PYTHONPATH=src
+# Allow importing deskid when PYTHONPATH=src
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from opendesk_auth.models import Base
+from deskid.models import Base
 
 
 def _split_sql(statements: str) -> list[str]:

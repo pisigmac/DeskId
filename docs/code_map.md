@@ -1,24 +1,24 @@
-# Auth — Code Map
-
-Companion to `AGENTS.md`. Use this instead of listing directories. Paths are relative to `Auth/`.
+# DeskID — Code Map
+ 
+Companion to `AGENTS.md`. Use this instead of listing directories. Paths are relative to `OpenDesk/`.
 
 ## Directory tree
 
 ```
-Auth/
+OpenDesk/
 ├── AGENTS.md                 Agent context (read first)
 ├── code_map.md               This file
 ├── gaps_enhancements.md      Current features and remaining gaps
 ├── README.md                 Operator/developer README
-├── IMPLEMENTATION_STATUS.md  2026-08 hardening checklist (partially stale vs current routes)
-├── pyproject.toml            Package opendesk-auth 1.0.0; script opendesk-auth
-├── Dockerfile                python:3.12-slim, pip -e ".[postgres]", CMD opendesk-auth
+├── IMPLEMENTATION_STATUS.md  2026-08 hardening checklist
+├── pyproject.toml            Package deskid 1.0.0; script deskid
+├── Dockerfile                python:3.12-slim, pip -e ".[postgres]", CMD deskid
 ├── docker-compose.yml        postgres:16-alpine :5433 + auth :8090
-├── client.ts                 TypeScript SDK class OpenDesk Auth
+├── client.ts                 TypeScript SDK class DeskID
 ├── .env.example              AUTH_* template
 ├── .gitignore                .venv, .env, *.db — does NOT ignore *.pem
-├── src/opendesk_auth/         Service implementation
-├── tests/test_auth.py        56 pytest tests
+├── src/deskid/               Service implementation
+├── tests/test_auth.py        70 pytest tests
 └── migrations/               0002, 0003 + run_migrations.py (no 0001; base via create_all)
 ```
 
@@ -26,11 +26,11 @@ Untracked local secrets often present: `private.pem`, `public.pem`, `.env`. Do n
 
 ## Source files
 
-### `src/opendesk_auth/__init__.py`
+### `src/deskid/__init__.py`
 
 `__version__ = "1.0.0"`. Used by `/health` and FastAPI metadata.
 
-### `src/opendesk_auth/app.py`
+### `src/deskid/app.py`
 
 - `create_app()` factory; module-level `app = create_app()`.
 - Lifespan: `logging.basicConfig` + `init_db()` (`Base.metadata.create_all`).
@@ -40,11 +40,11 @@ Untracked local secrets often present: `private.pem`, `public.pem`, `.env`. Do n
 - `GET /health` — `check_db_health()` + `get_key_material()`; body `status` is `ok` or `degraded`; **HTTP status is always 200**.
 - Routers: `jwks` (no prefix), others under `/v1`.
 
-### `src/opendesk_auth/cli.py`
+### `src/deskid/cli.py`
 
-`opendesk-auth` entry. Requires `AUTH_HOST` and `AUTH_PORT`. `uvicorn.run("opendesk_auth.app:app", ...)`.
+`opendesk-auth` entry. Requires `AUTH_HOST` and `AUTH_PORT`. `uvicorn.run("deskid.app:app", ...)`.
 
-### `src/opendesk_auth/config.py`
+### `src/deskid/config.py`
 
 `Settings(BaseSettings)` with `env_prefix="AUTH_"`, `.env` file, `extra="ignore"`. Cached via `@lru_cache get_settings()`.
 
@@ -79,11 +79,11 @@ Untracked local secrets often present: `private.pem`, `public.pem`, `.env`. Do n
 
 Helpers: `cors_origin_list()`, `default_audience_list()`, `private_key_pem()`, `public_key_pem()`.
 
-### `src/opendesk_auth/db.py`
+### `src/deskid/db.py`
 
 Lazy global engine + sessionmaker. SQLite: `check_same_thread=False`. Else: pool + `pool_pre_ping`. `init_db()` = `create_all`. `get_db()` yield/close. `check_db_health()` = `SELECT 1`. `reset_engine()` for tests.
 
-### `src/opendesk_auth/models.py`
+### `src/deskid/models.py`
 
 SQLAlchemy 2 declarative. IDs are UUID strings.
 
@@ -102,11 +102,11 @@ SQLAlchemy 2 declarative. IDs are UUID strings.
 
 `User.deleted_at` is set on admin suspend; GDPR path **hard-deletes** the row instead.
 
-### `src/opendesk_auth/schemas.py`
+### `src/deskid/schemas.py`
 
 Pydantic v2 request/response models. `RegisterRequest.password` and `ResetPasswordRequest.password` have `min_length=8` (duplicates policy default). `RegisterResponse` allows null tokens when `verification_required`. `ErrorDetail` documents the envelope (handlers live in `app.py`). `SessionOut` has no IP/UA/device fields (sessions are refresh-token rows).
 
-### `src/opendesk_auth/crypto.py`
+### `src/deskid/crypto.py`
 
 - `hash_password` / `verify_password` — bcrypt.
 - `hash_token` — SHA-256 hex (refresh, verify, reset).
@@ -116,7 +116,7 @@ Pydantic v2 request/response models. `RegisterRequest.password` and `ResetPasswo
 - `issue_access_token` — RS256, `aud = ["opendesk-auth", *audiences]`. No `jti`, `nbf`, `azp`.
 - `decode_access_token(token, audience=None)` — verifies `iss`; `verify_aud` only if `audience` passed. `/introspect` calls it **without** audience.
 
-### `src/opendesk_auth/services.py`
+### `src/deskid/services.py`
 
 Domain functions (not a class). Grouped:
 
@@ -140,19 +140,19 @@ Domain functions (not a class). Grouped:
 | `list_user_sessions` / `revoke_session` | Refresh-token rows as "sessions" |
 | `purge_stale_oauth_states` | Best-effort |
 
-### `src/opendesk_auth/middleware.py`
+### `src/deskid/middleware.py`
 
 `RequestContextMiddleware`: `x-request-id` (echo or UUID), contextvar `{request_id, ip}`. Security headers on every response: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `X-XSS-Protection`, `Referrer-Policy`, `HSTS` (always, including HTTP), `CSP: default-src 'none'`. IP is **direct** `request.client.host` (rate limiter has separate proxy logic).
 
-### `src/opendesk_auth/rate_limit.py`
+### `src/deskid/rate_limit.py`
 
 In-process `dict[str, list[datetime]]` + `Lock`. Not shared across workers. `rate_limit_dependency(action)` reads `app.state.rate_limiter`. Proxy IP only if `rate_limit_trust_proxy`.
 
-### `src/opendesk_auth/mail_client.py`
+### `src/deskid/mail_client.py`
 
 `POST {mail_base_url}/v1/send` with Bearer API key. Link base = `spa_callback_url.rsplit("/", 1)[0]` then `/verify-email?token=` or `/reset-password?token=`. Raises if mail env empty. Register/forgot catch exceptions and continue.
 
-### `src/opendesk_auth/oauth_providers.py`
+### `src/deskid/oauth_providers.py`
 
 Hardcoded:
 
@@ -165,11 +165,11 @@ Hardcoded:
 
 No PKCE, no `nonce`, no OIDC id_token verification (uses userinfo / GitHub API).
 
-### `src/opendesk_auth/routes/__init__.py`
+### `src/deskid/routes/__init__.py`
 
 Re-exports six routers.
 
-### `src/opendesk_auth/routes/auth.py`
+### `src/deskid/routes/auth.py`
 
 Prefix `/auth` (mounted at `/v1`). `current_user` decodes JWT with `audience="opendesk-auth"`, loads user, rejects inactive.
 
@@ -177,23 +177,23 @@ Endpoints: register, login, refresh, logout, GET/PATCH me, verify-email, forgot/
 
 Logout always returns ok even if token unknown. Logout audit has `actor_id=None`.
 
-### `src/opendesk_auth/routes/oauth.py`
+### `src/deskid/routes/oauth.py`
 
 Prefix `/oauth`. State stored in DB. Tokens returned in **fragment**. Exceptions from provider exchange become generic `400` (no leak). `purge_stale_oauth_states` after store, errors swallowed.
 
-### `src/opendesk_auth/routes/orgs.py`
+### `src/deskid/routes/orgs.py`
 
 Prefix `/orgs`. List own orgs; create org (caller becomes owner); add/update member if caller is `owner` or `admin`. **Missing:** list members, remove member, delete/rename org, transfer ownership, invite-by-email.
 
-### `src/opendesk_auth/routes/admin.py`
+### `src/deskid/routes/admin.py`
 
 Prefix `/admin`. `require_platform_admin`. List all users (no pagination/search). PATCH active. POST grants (`admin|operator|viewer`). GET audit (filters action/actor/resource; does **not** return `ip_address` / `user_agent`).
 
-### `src/opendesk_auth/routes/jwks.py`
+### `src/deskid/routes/jwks.py`
 
 `GET /.well-known/jwks.json` — `{keys: [one JWK]}`. `POST /introspect` — API key; decode without audience check.
 
-### `src/opendesk_auth/routes/me.py`
+### `src/deskid/routes/me.py`
 
 Prefix `/me`. Export + delete. Profile/sessions live under `/auth/me*` instead.
 

@@ -1,8 +1,8 @@
 /**
- * Typed client for OpenDesk Auth Service (FastAPI / Python backend).
+ * Typed client for DeskID Auth Service (FastAPI / Python backend).
  *
  * Usage:
- *   const auth = new OpenDeskAuth({ baseUrl: process.env.AUTH_ISSUER })
+ *   const auth = new DeskID({ baseUrl: process.env.AUTH_ISSUER })
  *   const result = await auth.login({ email: userEmail, password: userPassword })
  */
 
@@ -78,7 +78,7 @@ export type AuditLogResponse = {
   events: Array<Record<string, unknown>>
 }
 
-export class OpenDeskAuth {
+export class DeskID {
   private baseUrl: string
   private apiKey?: string
   private fetchFn: typeof fetch
@@ -256,5 +256,5 @@ export class OpenDeskAuth {
   }
 }
 
-export { OpenDeskAuth as DeskAuth, OpenDeskAuth as PisigmaAuth }
+export { DeskID as DeskIDClient, DeskID as DeskIDAuth, DeskID as OpenDeskAuth, DeskID as DeskAuth, DeskID as PisigmaAuth }
 

@@ -45,7 +45,7 @@ if [ -f "${PID_FILE}" ]; then
         echo -e "  Local Process:   ${RED}○ STOPPED${NC} (stale PID file)"
     fi
 else
-    LINGERING_PID="$(pgrep -f "opendesk_auth.app:app" 2>/dev/null | head -n 1 || true)"
+    LINGERING_PID="$(pgrep -f "deskid.app:app" 2>/dev/null | head -n 1 || true)"
     if [ -n "${LINGERING_PID}" ]; then
         echo -e "  Local Process:   ${GREEN}● RUNNING${NC} (PID: ${LINGERING_PID})"
     else

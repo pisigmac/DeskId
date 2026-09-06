@@ -8,7 +8,7 @@ from threading import Lock
 from fastapi import HTTPException, Request, status
 from sqlalchemy import func, select
 
-from opendesk_auth.config import Settings, get_settings
+from deskid.config import Settings, get_settings
 
 
 def _client_ip(request: Request) -> str:
@@ -50,8 +50,8 @@ class RateLimiter:
             return True
 
     def _is_allowed_db(self, key: str, limit: int, window_seconds: int, now: datetime) -> bool:
-        from opendesk_auth.db import get_db_session
-        from opendesk_auth.models import RateLimitEntry
+        from deskid.db import get_db_session
+        from deskid.models import RateLimitEntry
 
         cutoff = now - timedelta(seconds=window_seconds)
         with get_db_session() as session:

@@ -1,5 +1,5 @@
 # ==============================================================================
-# OpenDesk Auth — Web Crawler & Indexing Instructions
+# DeskID — Web Crawler & Indexing Instructions
 # ==============================================================================
 
 User-agent: *

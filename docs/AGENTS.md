@@ -1,17 +1,17 @@
-# Auth — Agent Context
+# DeskID — Agent Context
 
-Read this file first. Then read `code_map.md` for file-level navigation and `gaps_enhancements.md` for remaining product gaps. This directory is **only** the OpenDesk Auth service.
+Read this file first. Then read `code_map.md` for file-level navigation and `gaps_enhancements.md` for remaining product gaps. This repository is the **DeskID** authentication and identity module.
 
 ## What this directory is
 
-Shared identity microservice for OpenDesk Auth products. Stack: Python 3.10+ / FastAPI / SQLAlchemy 2 / Pydantic v2 / Postgres or SQLite. Typed client: `client.ts` (`OpenDesk Auth`). Tests: 56 in `tests/test_auth.py`.
+Shared authentication and identity microservice module for connected consumer services. Stack: Python 3.10+ / FastAPI / SQLAlchemy 2 / Pydantic v2 / Postgres or SQLite. Typed client: `client.ts` (`DeskID`). Tests: `tests/test_auth.py`.
 
 Health: `http://127.0.0.1:8090/health`. OpenAPI: `http://127.0.0.1:8090/docs`.
 
 ## Do / do not
 
-- **Do** change Auth under `src/opendesk_auth/`, `client.ts`, `tests/`, `migrations/`, `.env.example`, `README.md`.
-- **Do** keep Auth product-agnostic: no product names in source. Product access is `ProductGrant.audience` plus `AUTH_DEFAULT_AUDIENCES` at deploy time.
+- **Do** change Auth under `src/deskid/`, `client.ts`, `tests/`, `migrations/`, `.env.example`, `README.md`.
+- **Do** keep DeskID product-agnostic: no specific consumer product names hard-coded in source. Product access is `ProductGrant.audience` plus `AUTH_DEFAULT_AUDIENCES` at deploy time.
 - **Do not** generate ephemeral JWT keys. `_ensure_keys` must fail closed.
 - **Do not** put tokens in OAuth redirect **query** strings. Fragments only (`oauth.py` `_redirect_with_tokens`).
 - **Do not** link OAuth to an existing password account unless `email_verified_at` is set.
@@ -22,22 +22,22 @@ Health: `http://127.0.0.1:8090/health`. OpenAPI: `http://127.0.0.1:8090/docs`.
 ## How to run
 
 ```bash
-cd Auth
+cd OpenDesk
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"          # add .[postgres] for Postgres
 cp .env.example .env             # AUTH_DATABASE_URL + AUTH_ISSUER required
 # RSA keys required for token issuance:
 #   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out private.pem
 #   openssl rsa -in private.pem -pubout -out public.pem
-opendesk-auth                     # uvicorn, AUTH_HOST + AUTH_PORT required
+deskid                           # uvicorn, AUTH_HOST + AUTH_PORT required
 # health: http://127.0.0.1:8090/health
 # openapi: http://127.0.0.1:8090/docs
-pytest tests/ -v                 # 56 tests, uses tmp SQLite + generated RSA
+pytest tests/ -v                 # 70 tests, uses tmp SQLite + generated RSA
 PYTHONPATH=src python3 migrations/run_migrations.py
 docker compose up -d             # Postgres :5433 + Auth :8090 (compose does not pass JWT keys)
 ```
 
-Env prefix is `AUTH_`. Settings live in `src/opendesk_auth/config.py` (`pydantic-settings`). Missing `AUTH_DATABASE_URL` or `AUTH_ISSUER` raises at settings load. Missing JWT keys raise at first token/JWKS use.
+Env prefix is `AUTH_`. Settings live in `src/deskid/config.py` (`pydantic-settings`). Missing `AUTH_DATABASE_URL` or `AUTH_ISSUER` raises at settings load. Missing JWT keys raise at first token/JWKS use.
 
 ## Mental model
 
@@ -204,18 +204,18 @@ OAuth authorize/token/userinfo **URLs are hardcoded** in `oauth_providers.py` (G
 
 | Need | File |
 |------|------|
-| App factory, health, error envelope | `src/opendesk_auth/app.py` |
-| All env settings | `src/opendesk_auth/config.py` |
-| Domain logic | `src/opendesk_auth/services.py` |
-| JWT / bcrypt / token hash | `src/opendesk_auth/crypto.py` |
-| Tables | `src/opendesk_auth/models.py` |
-| Request/response types | `src/opendesk_auth/schemas.py` |
-| Register/login/me/sessions | `src/opendesk_auth/routes/auth.py` |
-| Google/GitHub | `src/opendesk_auth/routes/oauth.py`, `oauth_providers.py` |
-| Admin + audit query | `src/opendesk_auth/routes/admin.py` |
-| GDPR | `src/opendesk_auth/routes/me.py` |
-| JWKS + introspect | `src/opendesk_auth/routes/jwks.py` |
-| Orgs | `src/opendesk_auth/routes/orgs.py` |
+| App factory, health, error envelope | `src/deskid/app.py` |
+| All env settings | `src/deskid/config.py` |
+| Domain logic | `src/deskid/services.py` |
+| JWT / bcrypt / token hash | `src/deskid/crypto.py` |
+| Tables | `src/deskid/models.py` |
+| Request/response types | `src/deskid/schemas.py` |
+| Register/login/me/sessions | `src/deskid/routes/auth.py` |
+| Google/GitHub | `src/deskid/routes/oauth.py`, `oauth_providers.py` |
+| Admin + audit query | `src/deskid/routes/admin.py` |
+| GDPR | `src/deskid/routes/me.py` |
+| JWKS + introspect | `src/deskid/routes/jwks.py` |
+| Orgs | `src/deskid/routes/orgs.py` |
 | SDK | `client.ts` |
 | Tests | `tests/test_auth.py` |
 | Full file map | `code_map.md` |

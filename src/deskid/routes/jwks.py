@@ -5,9 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from opendesk_auth.config import get_settings
-from opendesk_auth.crypto import decode_access_token, public_jwk
-from opendesk_auth.schemas import IntrospectRequest, IntrospectResponse
+from deskid.config import get_settings
+from deskid.crypto import decode_access_token, public_jwk
+from deskid.schemas import IntrospectRequest, IntrospectResponse
 
 router = APIRouter(tags=["jwks"])
 bearer = HTTPBearer(auto_error=False)

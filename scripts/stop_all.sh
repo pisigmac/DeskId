@@ -47,8 +47,8 @@ if [ -f "${PID_FILE}" ]; then
     rm -f "${PID_FILE}"
 fi
 
-# 2. Search for any lingering uvicorn/opendesk_auth processes
-LINGERING_PIDS=$(pgrep -f "opendesk_auth.app:app" 2>/dev/null || true)
+# 2. Search for any lingering uvicorn/deskid processes
+LINGERING_PIDS=$(pgrep -f "deskid.app:app" 2>/dev/null || true)
 if [ -n "${LINGERING_PIDS}" ]; then
     echo "Found lingering uvicorn processes (${LINGERING_PIDS}). Terminating..."
     for p in ${LINGERING_PIDS}; do

@@ -1,6 +1,6 @@
-# OpenDesk Auth
+# DeskID
 
-Shared identity microservice for OpenDesk Auth products. **Product-agnostic:** no consumer product is hard-coded in Auth. Other services validate JWTs via JWKS and assign product grants via admin API or deployment env.
+DeskID is a high-performance, product-agnostic authentication and identity microservice module. Consumer services validate JWTs via JWKS and assign product grants via admin API or deployment env.
 
 ## Features
 
@@ -20,12 +20,12 @@ Shared identity microservice for OpenDesk Auth products. **Product-agnostic:** n
 ## Quick start
 
 ```bash
-cd Auth
+cd OpenDesk
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
 # Edit .env — at minimum set AUTH_JWT_PRIVATE_KEY / AUTH_JWT_PUBLIC_KEY
-opendesk-auth
+deskid
 # → http://127.0.0.1:8090
 ```
 
@@ -216,9 +216,9 @@ Rate limits are per process. Run a single replica or put a shared limiter in fro
 ## TypeScript SDK
 
 ```typescript
-import { OpenDesk Auth } from './client'
+import { DeskID } from './client'
 
-const auth = new OpenDesk Auth({ baseUrl: 'http://127.0.0.1:8090' })
+const auth = new DeskID({ baseUrl: 'http://127.0.0.1:8090' })
 
 // Auth flows
 await auth.register({ email, password })

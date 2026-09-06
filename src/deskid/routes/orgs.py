@@ -5,10 +5,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from opendesk_auth.db import get_db
-from opendesk_auth.models import Membership, Org, User
-from opendesk_auth.routes.auth import current_user
-from opendesk_auth.schemas import AddMemberRequest, CreateOrgRequest, OrgOut
+from deskid.db import get_db
+from deskid.models import Membership, Org, User
+from deskid.routes.auth import current_user
+from deskid.schemas import AddMemberRequest, CreateOrgRequest, OrgOut
 
 router = APIRouter(prefix="/orgs", tags=["orgs"])
 

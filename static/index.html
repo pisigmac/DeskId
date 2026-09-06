@@ -4,8 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <!-- Primary Meta Tags -->
-  <title>OpenDesk Auth — Self-Hosted Identity Infrastructure for Multi-Product SaaS</title>
-  <meta name="title" content="OpenDesk Auth — Self-Hosted Identity Infrastructure for Multi-Product SaaS" />
+  <title>DeskID — Self-Hosted Identity Infrastructure for Multi-Product SaaS</title>
+  <meta name="title" content="DeskID — Self-Hosted Identity Infrastructure for Multi-Product SaaS" />
   <meta name="description" content="Product-agnostic, self-hosted RS256 JWT & JWKS identity engine. Replace expensive per-MAU SaaS auth vendors with zero lock-in." />
   <meta name="keywords" content="auth, identity provider, JWT, RS256, JWKS, self-hosted auth, authentication microservice, OAuth2, multi-tenant auth, RBAC, FastAPI, OpenDesk" />
   <meta name="author" content="OpenDesk Team" />
@@ -18,14 +18,14 @@
   <!-- OpenGraph / Facebook -->
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://auth.opendesk.local/" />
-  <meta property="og:title" content="OpenDesk Auth — Self-Hosted Identity Infrastructure for Multi-Product SaaS" />
+  <meta property="og:title" content="DeskID — Self-Hosted Identity Infrastructure for Multi-Product SaaS" />
   <meta property="og:description" content="Decoupled RS256 JWT authentication engine with stateless JWKS verification, multi-tenant orgs, and SOC2-ready audit logging." />
   <meta property="og:image" content="https://auth.opendesk.local/og-image.png" />
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:url" content="https://auth.opendesk.local/" />
-  <meta name="twitter:title" content="OpenDesk Auth — Self-Hosted Identity Infrastructure for Multi-Product SaaS" />
+  <meta name="twitter:title" content="DeskID — Self-Hosted Identity Infrastructure for Multi-Product SaaS" />
   <meta name="twitter:description" content="Decoupled RS256 JWT authentication engine with stateless JWKS verification, multi-tenant orgs, and SOC2-ready audit logging." />
   <meta name="twitter:image" content="https://auth.opendesk.local/og-image.png" />
 
@@ -34,7 +34,7 @@
   {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
-    "name": "OpenDesk Auth",
+    "name": "DeskID",
     "operatingSystem": "Linux, macOS, Windows, Docker, Kubernetes",
     "applicationCategory": "DeveloperApplication, SecurityApplication",
     "offers": {
@@ -47,8 +47,8 @@
     "softwareVersion": "1.0.0",
     "author": {
       "@type": "Organization",
-      "name": "OpenDesk",
-      "url": "https://github.com/pisigmac/OpenDesk"
+      "name": "DeskID",
+      "url": "https://github.com/pisigmac/DeskId.git"
     }
   }
   </script>
@@ -508,7 +508,7 @@
         Self-Hosted Identity Infrastructure
       </div>
       <h1>Decoupled Identity Engine for<br />Multi-Product SaaS Architectures</h1>
-      <p>Replace per-MAU SaaS vendor lock-in. OpenDesk Auth issues RS256 JWT tokens with stateless JWKS verification, org tenancy, and SOC2-ready audit logging.</p>
+      <p>Replace per-MAU SaaS vendor lock-in. DeskID issues RS256 JWT tokens with stateless JWKS verification, org tenancy, and SOC2-ready audit logging.</p>
 
       <div class="hero-cta">
         <a href="/admin/console" class="btn btn-primary" style="padding: 12px 28px; font-size: 15px;">
@@ -534,8 +534,8 @@
           </div>
         </div>
         <div class="code-panel" id="code-cli">
-<span class="code-cm"># 1. Install OpenDesk Auth microservice</span>
-pip install opendesk-auth
+<span class="code-cm"># 1. Install DeskID microservice</span>
+pip install deskid
 
 <span class="code-cm"># 2. Configure production RSA keys & issuer</span>
 <span class="code-kw">export</span> AUTH_DATABASE_URL=<span class="code-str">"postgresql+psycopg://auth:secret@postgres:5432/opendesk"</span>
@@ -543,7 +543,7 @@ pip install opendesk-auth
 <span class="code-kw">export</span> AUTH_JWT_PRIVATE_KEY_FILE=<span class="code-str">"./private.pem"</span>
 
 <span class="code-cm"># 3. Start high-performance uvicorn engine</span>
-opendesk-auth
+deskid
 <span class="code-cm"># Health check: /health</span>
         </div>
         <div class="code-panel" id="code-sdk" style="display:none;">
@@ -653,7 +653,7 @@ console.log(<span class="code-str">'User Identity:'</span>, payload.sub, <span c
           </div>
           <div class="arch-arrow">➔</div>
           <div class="arch-node highlight">
-            <h4 style="margin-bottom:6px;color:var(--accent);">OpenDesk Auth</h4>
+            <h4 style="margin-bottom:6px;color:var(--accent);">DeskID</h4>
             <p style="font-size:13px;color:var(--text-muted);">Issues RS256 JWT Token</p>
           </div>
           <div class="arch-arrow">➔</div>
@@ -671,14 +671,14 @@ console.log(<span class="code-str">'User Identity:'</span>, payload.sub, <span c
     <div class="container">
       <div class="section-title">
         <h2>Feature & Security Comparison</h2>
-        <p>See how OpenDesk Auth compares against legacy identity providers.</p>
+        <p>See how DeskID compares against legacy identity providers.</p>
       </div>
 
       <table class="compare-table">
         <thead>
           <tr>
             <th>Capability</th>
-            <th>OpenDesk Auth</th>
+            <th>DeskID</th>
             <th>Auth0 / Okta</th>
             <th>Keycloak</th>
           </tr>
@@ -726,7 +726,7 @@ console.log(<span class="code-str">'User Identity:'</span>, payload.sub, <span c
         <div class="footer-col">
           <div class="brand" style="margin-bottom:14px;">
             <div class="brand-icon">O</div>
-            <span>OpenDesk Auth</span>
+            <span>DeskID</span>
           </div>
           <p>Product-agnostic identity microservice for modern SaaS ecosystems.</p>
         </div>
@@ -749,14 +749,14 @@ console.log(<span class="code-str">'User Identity:'</span>, payload.sub, <span c
         <div class="footer-col">
           <h4>Open Source</h4>
           <ul>
-            <li><a href="https://github.com/pisigmac/OpenDesk.git">GitHub Repository</a></li>
+            <li><a href="https://github.com/pisigmac/DeskId.git">GitHub Repository</a></li>
             <li><a href="/docs">SDK Client (client.ts)</a></li>
           </ul>
         </div>
       </div>
 
       <div class="footer-bottom">
-        <div>© 2026 OpenDesk Auth. Released under the MIT License.</div>
+        <div>© 2026 DeskID. Released under the MIT License.</div>
         <div style="color:var(--text-dim);">Production Grade Identity & Access Management</div>
       </div>
     </div>

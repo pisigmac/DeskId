@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uvicorn
 
-from opendesk_auth.config import get_settings
+from deskid.config import get_settings
 
 
 def main() -> None:
@@ -14,7 +14,7 @@ def main() -> None:
     if settings.port is None:
         raise RuntimeError("AUTH_PORT is required to start the dev server")
     uvicorn.run(
-        "opendesk_auth.app:app",
+        "deskid.app:app",
         host=settings.host,
         port=settings.port,
         reload=False,

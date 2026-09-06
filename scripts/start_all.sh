@@ -181,9 +181,9 @@ else
 
     echo -e "\n${BLUE}Starting OpenDesk Auth service process...${NC}"
     if [ "${RUN_FOREGROUND}" = true ]; then
-        exec python3 -m uvicorn opendesk_auth.app:app --host "${HOST}" --port "${PORT}"
+        exec python3 -m uvicorn deskid.app:app --host "${HOST}" --port "${PORT}"
     else
-        setsid python3 -m uvicorn opendesk_auth.app:app --host "${HOST}" --port "${PORT}" >> "${LOG_FILE}" 2>&1 < /dev/null &
+        setsid python3 -m uvicorn deskid.app:app --host "${HOST}" --port "${PORT}" >> "${LOG_FILE}" 2>&1 < /dev/null &
         SERVER_PID=$!
         echo "${SERVER_PID}" > "${PID_FILE}"
         echo -e "${GREEN}✓ Process launched in background (PID: ${SERVER_PID}).${NC}"
