@@ -65,16 +65,74 @@ Example claims (after granting audience `myproduct`):
 }
 ```
 
-## Enterprise IAM & Grant Scoping
+## Enterprise IAM & Multi-Service Architecture
 
-DeskID provides a central identity and access management control plane for all integrated downstream services across multi-tenant environments.
+DeskID provides a centralized identity and access management control plane for all downstream integrated microservices across multi-tenant deployments.
+
+### Authentication & Token Issuance Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Client / User
+    participant DeskID as DeskID (Auth Service)
+    participant DB as DeskID Database
+    participant Service as Downstream Service
+
+    Note over User,DeskID: 1. Login & Initial Token Issuance
+    User->>DeskID: POST /v1/auth/login { email, password }
+    DeskID->>DB: Verify credentials, email status, lockout
+    DeskID->>DB: Fetch Org Membership & Grants (Global + Primary Org)
+    DeskID-->>User: Return Access Token (JWT) + Refresh Token
+
+    Note over User,Service: 2. Stateless API Request
+    User->>Service: GET /api/v1/resource (Authorization: Bearer <JWT>)
+    Service->>DeskID: GET /.well-known/jwks.json (Cached locally)
+    Service->>Service: Validate signature, exp, iss, and aud
+    Service->>Service: Authorize user based on roles[service_id] & org_id
+    Service-->>User: 200 OK (Protected Resource)
+
+    Note over User,DeskID: 3. Explicit Organization Switch
+    User->>DeskID: POST /v1/auth/switch-org { org_id: "org_tenant_2" }
+    DeskID->>DB: Validate active membership in org_tenant_2
+    DeskID->>DB: Resolve tenant-specific grants for org_tenant_2
+    DeskID-->>User: Return new scoped JWT (org_id: org_tenant_2, scoped roles)
+```
+
+---
 
 ### Service-Wide vs Organization-Wide Grants
 
-Grants can be scoped at two distinct levels:
+Grants are managed centrally and scoped at two distinct levels:
+
+```mermaid
+graph TD
+    subgraph DeskID["DeskID IAM Control Plane"]
+        User["User Identity"]
+    end
+
+    subgraph Grants["Grant Scoping"]
+        Global["Service-Wide Grant (org_id = null)<br>Global Admin / SRE / Auditor"]
+        OrgScoped["Organization-Wide Grant (org_id = 'org_tenant_1')<br>Tenant Member / Analyst / Operator"]
+    end
+
+    subgraph Services["Downstream Integrated Services"]
+        S1["Service A<br>(e.g. Analytics Engine)"]
+        S2["Service B<br>(e.g. Compute Cluster)"]
+        S3["Service C<br>(e.g. Storage Catalog)"]
+    end
+
+    User --> Global
+    User --> OrgScoped
+
+    Global -->|Always Active across all orgs| S1
+    Global -->|Always Active across all orgs| S2
+    OrgScoped -->|Active ONLY in Tenant 1| S1
+    OrgScoped -->|Active ONLY in Tenant 1| S3
+```
 
 1. **Service-Wide (Global Platform) Grants (`org_id = null`):**
-   - Applied to an integrated service across the entire platform regardless of which organization context the user is in.
+   - Applied to an integrated service across the entire platform regardless of which organization context the user is currently operating in.
    - Typically used for platform operators, infrastructure administrators, and global security auditors.
    - Always included in `roles` and `aud` across all organization contexts.
 
@@ -83,30 +141,25 @@ Grants can be scoped at two distinct levels:
    - Allows fine-grained role separation (e.g. an admin on `service-a` in Tenant 1, but a viewer on `service-a` in Tenant 2).
    - Dynamically evaluated and bound to the JWT when the user activates or switches organizations via `POST /v1/auth/switch-org`.
 
-```
-                              ┌───────────────────────────────────┐
-                              │            DeskID Auth            │
-                              │    (Central IAM Control Plane)    │
-                              └─────────────────┬─────────────────┘
-                                                │
-                 ┌──────────────────────────────┴──────────────────────────────┐
-                 ▼                                                             ▼
-    ┌──────────────────────────┐                                  ┌──────────────────────────┐
-    │   Service-Wide Grants    │                                  │ Organization-Wide Grants │
-    │   (Global / Product IAM) │                                  │ (Multi-Tenant Scoped)    │
-    └────────────┬─────────────┘                                  └────────────┬─────────────┘
-                 │                                                             │
-   User gets access across all orgs                              User gets access ONLY when
-   (e.g. Platform Operator, Global Auditor)                      active in a specific Tenant
-```
+---
 
-### Token Claims & Resolution
+### Audience Sets (`aud`) & Grant Resolution Rules
 
-When an access token is issued, DeskID resolves grants for the active organization:
-1. Base service-wide grants (`org_id = null`) are loaded.
-2. Organization-specific grants (`org_id = active_org_id`) take precedence and override global defaults for matching services.
+Every downstream service registered with DeskID is represented by a unique **Audience Identifier** (e.g. `service-a`, `service-b`, `service-c`).
 
-Example Token Payload:
+When a token is requested or switched:
+
+1. **Audience Inclusion (`aud`):**
+   - The `aud` claim is automatically constructed from the set of all services where the user has an active grant in the current context:
+     $$\text{aud} = [\text{"deskid"}, \text{service}_1, \text{service}_2, \dots]$$
+   - Downstream services **must** reject tokens that do not list their specific audience in `aud`.
+
+2. **Role Precedence & Overrides:**
+   - Base global grants (`org_id = null`) are loaded first.
+   - Organization-specific grants (`org_id = active_org_id`) take precedence and override global defaults for matching services.
+   - Services for which the user has no grant are excluded from `roles` and `aud`.
+
+#### Example Token Payload:
 
 ```json
 {
@@ -127,7 +180,19 @@ Example Token Payload:
 }
 ```
 
-Integrated downstream services validate the token locally and statelessly using public keys fetched from `/.well-known/jwks.json`.
+---
+
+### Downstream Service Validation Checklist
+
+When integrating any backend service with DeskID:
+
+1. **Fetch & Cache Public Keys:** Retrieve the JWKS from `/.well-known/jwks.json`. Refresh automatically on unknown `kid` or after cache TTL.
+2. **Stateless Verification:** Verify the token signature with the public key matching `header.kid`, ensuring:
+   - `iss == AUTH_ISSUER`
+   - `aud` contains your service's audience identifier (e.g. `"service-a"`)
+   - `exp > current_timestamp`
+3. **RBAC Enforcement:** Check `claims["roles"]["service-a"]` to enforce authorization (e.g. `admin`, `operator`, `viewer`).
+4. **Tenant Isolation:** Filter data partitions, catalogs, or workspaces matching `claims["org_id"]`.
 
 ## Zero-Downtime Key Rotation (JWKS Key Ring)
 
