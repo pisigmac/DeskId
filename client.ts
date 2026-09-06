@@ -69,6 +69,7 @@ export type GrantRequest = {
   user_id: string
   audience: string
   role: string
+  org_id?: string
 }
 
 export type AuditLogResponse = {
@@ -257,6 +258,18 @@ export class DeskID {
     if (params.offset !== undefined) qs.set('offset', String(params.offset))
     const query = qs.toString() ? `?${qs}` : ''
     return this.request('GET', `/v1/admin/audit${query}`, undefined, token)
+  }
+
+  async queryReconciliationEvents(
+    token: string,
+    params: { since_id?: string; since_timestamp?: string; limit?: number },
+  ): Promise<ClientResult<{ events: Array<Record<string, unknown>>; next_cursor: string | null; has_more: boolean }>> {
+    const qs = new URLSearchParams()
+    if (params.since_id) qs.set('since_id', params.since_id)
+    if (params.since_timestamp) qs.set('since_timestamp', params.since_timestamp)
+    if (params.limit !== undefined) qs.set('limit', String(params.limit))
+    const query = qs.toString() ? `?${qs}` : ''
+    return this.request('GET', `/v1/admin/reconciliation/events${query}`, undefined, token)
   }
 }
 

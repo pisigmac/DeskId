@@ -54,6 +54,7 @@ class SwitchOrgRequest(BaseModel):
 class GrantOut(BaseModel):
     audience: str
     role: str
+    org_id: str | None = None
 
 
 class OrgOut(BaseModel):
@@ -87,6 +88,7 @@ class GrantRequest(BaseModel):
     user_id: str
     audience: str
     role: str
+    org_id: str | None = None
 
 
 class IntrospectRequest(BaseModel):

@@ -52,6 +52,8 @@ def introspect(
             user = db.query(User).filter(User.id == sub).one_or_none()
             if not user or not user.is_active or user.deleted_at is not None:
                 return IntrospectResponse(active=False, claims=None)
+            if claims.get("token_version") is not None and user.token_version != claims.get("token_version"):
+                return IntrospectResponse(active=False, claims=None)
         return IntrospectResponse(active=True, claims=claims)
     except Exception:
         return IntrospectResponse(active=False, claims=None)

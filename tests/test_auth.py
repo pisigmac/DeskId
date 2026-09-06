@@ -1737,3 +1737,173 @@ def test_switch_org_scoping_and_forbidden(client):
         headers={"Authorization": f"Bearer {token_2}"},
     )
     assert unauth_resp.status_code == 403
+
+
+def test_org_scoped_product_grants(client):
+    from deskid.crypto import decode_access_token
+
+    # 1. Register admin
+    admin = client.post(
+        "/v1/auth/register",
+        json={"email": "grantadmin@example.com", "password": "password123"},
+    ).json()
+    admin_token = admin["access_token"]
+
+    # 2. Register target user
+    user = client.post(
+        "/v1/auth/register",
+        json={"email": "targetuser@example.com", "password": "password123"},
+    ).json()
+    user_token = user["access_token"]
+    user_claims = decode_access_token(user_token)
+    org_1_id = user_claims["org_id"]
+
+    # 3. Create second org for target user
+    org_2_resp = client.post(
+        "/v1/orgs",
+        json={"name": "Org Beta"},
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    org_2_id = org_2_resp.json()["id"]
+
+    # 4. Admin grants user role "admin" on "keppler" in org_1, and role "viewer" on "keppler" in org_2
+    g1 = client.post(
+        "/v1/admin/grants",
+        json={"user_id": user_claims["sub"], "audience": "keppler", "role": "admin", "org_id": org_1_id},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert g1.status_code == 200
+
+    g2 = client.post(
+        "/v1/admin/grants",
+        json={"user_id": user_claims["sub"], "audience": "keppler", "role": "viewer", "org_id": org_2_id},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert g2.status_code == 200
+
+    # 5. Switch to Org 1 -> token roles["keppler"] must be "admin"
+    t1_resp = client.post(
+        "/v1/auth/switch-org",
+        json={"org_id": org_1_id},
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert t1_resp.status_code == 200
+    claims_org1 = decode_access_token(t1_resp.json()["access_token"])
+    assert claims_org1["roles"]["keppler"] == "admin"
+
+    # 6. Switch to Org 2 -> token roles["keppler"] must be "viewer"
+    t2_resp = client.post(
+        "/v1/auth/switch-org",
+        json={"org_id": org_2_id},
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert t2_resp.status_code == 200
+    claims_org2 = decode_access_token(t2_resp.json()["access_token"])
+    assert claims_org2["roles"]["keppler"] == "viewer"
+
+
+def test_token_version_invalidation_on_password_change(client, monkeypatch):
+    monkeypatch.setenv("AUTH_INTROSPECTION_API_KEY", "secret-key")
+    from deskid.config import get_settings
+    get_settings.cache_clear()
+
+    # 1. Register user
+    reg = client.post(
+        "/v1/auth/register",
+        json={"email": "versionuser@example.com", "password": "oldpassword123"},
+    ).json()
+    old_token = reg["access_token"]
+
+    # 2. Introspect old token -> active
+    intro1 = client.post(
+        "/introspect",
+        json={"token": old_token},
+        headers={"Authorization": "Bearer secret-key"},
+    )
+    assert intro1.status_code == 200
+    assert intro1.json()["active"] is True
+
+    # 3. User changes password (bumps token_version)
+    chg = client.post(
+        "/v1/auth/me/change-password",
+        json={"current_password": "oldpassword123", "new_password": "newpassword123"},
+        headers={"Authorization": f"Bearer {old_token}"},
+    )
+    assert chg.status_code == 200
+
+    # 4. Old token introspect -> active: False due to token_version mismatch
+    intro2 = client.post(
+        "/introspect",
+        json={"token": old_token},
+        headers={"Authorization": "Bearer secret-key"},
+    )
+    assert intro2.status_code == 200
+    assert intro2.json()["active"] is False
+
+
+def test_reconciliation_events_feed(client):
+    # 1. Register admin
+    admin = client.post(
+        "/v1/auth/register",
+        json={"email": "feedadmin@example.com", "password": "password123"},
+    ).json()
+    admin_token = admin["access_token"]
+
+    # 2. Create org
+    client.post(
+        "/v1/orgs",
+        json={"name": "Recon Org"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    # 3. Query reconciliation feed
+    resp = client.get(
+        "/v1/admin/reconciliation/events?limit=50",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "events" in data
+    assert len(data["events"]) >= 2
+    actions = [e["action"] for e in data["events"]]
+    assert "user.register" in actions
+    assert "org.create" in actions
+
+
+def test_audit_chain_verifier_script(client):
+    import subprocess
+    from deskid.db import get_engine
+
+    # 1. Register admin to populate audit events
+    admin = client.post(
+        "/v1/auth/register",
+        json={"email": "verifier@example.com", "password": "password123"},
+    ).json()
+    client.post(
+        "/v1/orgs",
+        json={"name": "Verified Org"},
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+    )
+
+    # 2. Export audit log to JSON
+    events_resp = client.get(
+        "/v1/admin/reconciliation/events",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+    )
+    assert events_resp.status_code == 200
+
+    import tempfile
+    with tempfile.NamedTemporaryFile("w+", suffix=".json") as tmp:
+        import json
+        json.dump(events_resp.json()["events"], tmp)
+        tmp.flush()
+
+        res = subprocess.run(
+            ["python3", "scripts/verify_audit_chain.py", "--file", tmp.name],
+            capture_output=True,
+            text=True,
+        )
+        assert res.returncode == 0
+        assert "VERIFICATION SUCCESS" in res.stdout
+
+

@@ -103,6 +103,7 @@ def issue_access_token(
     workspace_id: str | None,
     audiences: list[str],
     roles: dict[str, str],
+    token_version: int = 1,
     settings: Settings | None = None,
 ) -> str:
     settings = settings or get_settings()
@@ -113,6 +114,7 @@ def issue_access_token(
         "email": email,
         "org_id": org_id,
         "workspace_id": workspace_id,
+        "token_version": token_version,
         # Always include the Auth service itself as an audience so Auth endpoints can
         # verify tokens locally without depending on product-specific audiences.
         "aud": ["deskid", *audiences],

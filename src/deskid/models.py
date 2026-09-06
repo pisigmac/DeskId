@@ -34,6 +34,7 @@ class User(Base):
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    token_version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     identities: Mapped[list[Identity]] = relationship(back_populates="user")
@@ -84,15 +85,17 @@ class Membership(Base):
 
 class ProductGrant(Base):
     __tablename__ = "product_grants"
-    __table_args__ = (UniqueConstraint("user_id", "audience", name="uq_user_audience"),)
+    __table_args__ = (UniqueConstraint("user_id", "org_id", "audience", name="uq_user_org_audience"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    org_id: Mapped[str | None] = mapped_column(ForeignKey("orgs.id"), nullable=True, index=True)
     audience: Mapped[str] = mapped_column(String(64))  # product id, e.g. agentmesh
     role: Mapped[str] = mapped_column(String(32))  # admin|operator|viewer
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     user: Mapped[User] = relationship(back_populates="grants")
+    org: Mapped[Org | None] = relationship()
 
 
 class RefreshToken(Base):

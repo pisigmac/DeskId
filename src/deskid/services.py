@@ -40,7 +40,7 @@ def user_to_out(user: User) -> UserOut:
         )
         for m in user.memberships
     ]
-    grants = [GrantOut(audience=g.audience, role=g.role) for g in user.grants]
+    grants = [GrantOut(audience=g.audience, role=g.role, org_id=g.org_id) for g in user.grants]
     return UserOut(
         id=user.id,
         email=user.email,
@@ -81,15 +81,27 @@ def issue_tokens(
     else:
         membership = primary_org(user)
 
-    roles = {g.audience: g.role for g in user.grants}
+    active_org_id = membership.org_id if membership else None
+    roles: dict[str, str] = {}
+    # First, collect user-wide/global grants (org_id is None)
+    for g in user.grants:
+        if g.org_id is None:
+            roles[g.audience] = g.role
+    # Next, override with org-specific grants matching active_org_id
+    if active_org_id:
+        for g in user.grants:
+            if g.org_id == active_org_id:
+                roles[g.audience] = g.role
+
     audiences = list(roles.keys())
     access = issue_access_token(
         sub=user.id,
         email=user.email,
-        org_id=membership.org_id if membership else None,
+        org_id=active_org_id,
         workspace_id=membership.workspace_id if membership else None,
         audiences=audiences,
         roles=roles,
+        token_version=getattr(user, "token_version", 1) or 1,
         settings=settings,
     )
     from deskid.middleware import get_request_context
@@ -117,21 +129,22 @@ def ensure_default_grant(
     db: Session,
     user: User,
     audience: str,
+    org_id: str | None = None,
     role: str = "operator",
 ) -> None:
-    existing = next((g for g in user.grants if g.audience == audience), None)
+    existing = next((g for g in user.grants if g.audience == audience and g.org_id == org_id), None)
     if existing:
         return
-    grant = ProductGrant(user_id=user.id, audience=audience, role=role)
+    grant = ProductGrant(user_id=user.id, org_id=org_id, audience=audience, role=role)
     db.add(grant)
     db.commit()
     db.refresh(user)
 
 
-def _apply_default_grants(db: Session, user: User, *, role: str) -> None:
+def _apply_default_grants(db: Session, user: User, *, org_id: str | None = None, role: str) -> None:
     settings = get_settings()
     for audience in settings.default_audience_list():
-        db.add(ProductGrant(user_id=user.id, audience=audience, role=role))
+        db.add(ProductGrant(user_id=user.id, org_id=org_id, audience=audience, role=role))
 
 
 def create_user_with_password(
@@ -158,7 +171,7 @@ def create_user_with_password(
     db.add(org)
     db.flush()
     db.add(Membership(org_id=org.id, user_id=user.id, role="owner", workspace_id=org.id))
-    _apply_default_grants(db, user, role=role)
+    _apply_default_grants(db, user, org_id=org.id, role=role)
     db.commit()
     db.refresh(user)
     return user
@@ -252,7 +265,7 @@ def find_or_create_oauth_user(
     db.add(org)
     db.flush()
     db.add(Membership(org_id=org.id, user_id=user.id, role="owner", workspace_id=org.id))
-    _apply_default_grants(db, user, role=settings.default_role)
+    _apply_default_grants(db, user, org_id=org.id, role=settings.default_role)
     db.add(Identity(user_id=user.id, provider=provider, provider_subject=provider_subject))
     db.commit()
     db.refresh(user)
@@ -586,6 +599,7 @@ def change_password(db: Session, user: User, current_password: str, new_password
 
 def set_user_active(db: Session, user: User, *, is_active: bool) -> User:
     user.is_active = is_active
+    user.token_version = (getattr(user, "token_version", 1) or 1) + 1
     if not is_active:
         user.deleted_at = datetime.now(timezone.utc)
         # Revoke all active refresh tokens
@@ -619,6 +633,7 @@ def list_user_sessions(db: Session, user: User) -> list[dict]:
 
 
 def revoke_all_user_sessions(db: Session, user: User, *, commit: bool = True) -> int:
+    user.token_version = (getattr(user, "token_version", 1) or 1) + 1
     rows = (
         db.query(RefreshToken)
         .filter(RefreshToken.user_id == user.id, RefreshToken.revoked.is_(False))

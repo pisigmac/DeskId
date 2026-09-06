@@ -87,13 +87,17 @@ def set_grant(
         raise HTTPException(status_code=400, detail="Invalid role")
     grant = (
         db.query(ProductGrant)
-        .filter(ProductGrant.user_id == body.user_id, ProductGrant.audience == body.audience)
+        .filter(
+            ProductGrant.user_id == body.user_id,
+            ProductGrant.org_id == body.org_id,
+            ProductGrant.audience == body.audience,
+        )
         .one_or_none()
     )
     if grant:
         grant.role = body.role
     else:
-        db.add(ProductGrant(user_id=body.user_id, audience=body.audience, role=body.role))
+        db.add(ProductGrant(user_id=body.user_id, org_id=body.org_id, audience=body.audience, role=body.role))
     db.commit()
     ctx = get_request_context()
     emit_audit(
@@ -105,9 +109,9 @@ def set_grant(
         resource_id=body.user_id,
         ip_address=ctx.get("ip"),
         user_agent=ctx.get("user_agent"),
-        details={"audience": body.audience, "role": body.role},
+        details={"audience": body.audience, "role": body.role, "org_id": body.org_id},
     )
-    logger.info("admin.set_grant admin=%s user=%s audience=%s role=%s", admin.id, body.user_id, body.audience, body.role)
+    logger.info("admin.set_grant admin=%s user=%s audience=%s role=%s org=%s", admin.id, body.user_id, body.audience, body.role, body.org_id)
     return {"ok": True, "user_id": body.user_id, "audience": body.audience, "role": body.role}
 
 
@@ -163,4 +167,64 @@ def query_audit_log(
             }
             for e in events
         ],
+    }
+
+
+@router.get("/reconciliation/events")
+def reconciliation_events(
+    since_id: str | None = None,
+    since_timestamp: str | None = None,
+    limit: int = 50,
+    _: User = Depends(require_platform_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Downstream consumer reconciliation feed (ordered chronologically ASC)."""
+    limit = max(1, min(limit, 200))
+    query = db.query(AuditLogEvent)
+
+    if since_id:
+        cursor_event = db.query(AuditLogEvent).filter(AuditLogEvent.id == since_id).one_or_none()
+        if cursor_event:
+            query = query.filter(
+                (AuditLogEvent.occurred_at > cursor_event.occurred_at)
+                | (
+                    (AuditLogEvent.occurred_at == cursor_event.occurred_at)
+                    & (AuditLogEvent.id > cursor_event.id)
+                )
+            )
+    elif since_timestamp:
+        try:
+            from datetime import datetime
+            dt = datetime.fromisoformat(since_timestamp)
+            query = query.filter(AuditLogEvent.occurred_at > dt)
+        except Exception:
+            pass
+
+    events = (
+        query.order_by(AuditLogEvent.occurred_at.asc(), AuditLogEvent.id.asc())
+        .limit(limit + 1)
+        .all()
+    )
+    has_more = len(events) > limit
+    returned_events = events[:limit]
+    next_cursor = returned_events[-1].id if returned_events else None
+
+    return {
+        "events": [
+            {
+                "id": e.id,
+                "occurred_at": e.occurred_at.isoformat(),
+                "actor_type": e.actor_type,
+                "actor_id": e.actor_id,
+                "action": e.action,
+                "resource_type": e.resource_type,
+                "resource_id": e.resource_id,
+                "previous_hash": e.previous_hash,
+                "integrity_hash": e.integrity_hash,
+                "details": e.details,
+            }
+            for e in returned_events
+        ],
+        "next_cursor": next_cursor,
+        "has_more": has_more,
     }
