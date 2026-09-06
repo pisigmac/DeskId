@@ -450,6 +450,29 @@ def test_redis_backed_rate_limiter_allows_and_blocks(monkeypatch):
     get_settings.cache_clear()
 
 
+def test_rate_limiter_fail_closed_mode(monkeypatch):
+    from deskid.config import get_settings
+    from deskid.rate_limit import RateLimiter
+
+    monkeypatch.setenv("AUTH_DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("AUTH_ISSUER", "https://auth.test.local")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_BACKEND", "redis")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_REDIS_URL", "redis://127.0.0.1:1/0")  # unreachable port / connection failure
+    monkeypatch.setenv("AUTH_RATE_LIMIT_FAIL_CLOSED", "true")
+    get_settings.cache_clear()
+    settings = get_settings()
+
+    limiter = RateLimiter(settings)
+    # When fail-closed is True, an unreachable redis backend should reject/block the request
+    assert limiter.is_allowed("192.168.1.1", "login") is False
+
+    # When fail-closed is False, fallback to memory should allow initial requests
+    monkeypatch.setenv("AUTH_RATE_LIMIT_FAIL_CLOSED", "false")
+    get_settings.cache_clear()
+    settings_fail_open = get_settings()
+    limiter_open = RateLimiter(settings_fail_open)
+    assert limiter_open.is_allowed("192.168.1.1", "login") is True
+    get_settings.cache_clear()
 
 
 # ---------------------------------------------------------------------------

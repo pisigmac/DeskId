@@ -87,6 +87,7 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_backend: str = "memory"  # memory | db | redis
     rate_limit_redis_url: str = ""
+    rate_limit_fail_closed: bool = False
     rate_limit_login: int = 10
     rate_limit_login_window_seconds: int = 60
     rate_limit_register: int = 10
