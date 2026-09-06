@@ -504,10 +504,25 @@ def delete_user_data(db: Session, user: User) -> None:
         db.delete(token)
     for identity in list(user.identities):
         db.delete(identity)
-    for membership in list(user.memberships):
-        db.delete(membership)
     for grant in list(user.grants):
         db.delete(grant)
+
+    # Clean up memberships and handle orphaned orgs or owner succession
+    for membership in list(user.memberships):
+        org_id = membership.org_id
+        db.delete(membership)
+        db.flush()
+
+        remaining = db.query(Membership).filter(Membership.org_id == org_id).all()
+        if not remaining:
+            org = db.query(Org).filter(Org.id == org_id).one_or_none()
+            if org:
+                db.delete(org)
+        else:
+            has_owner = any(m.role == "owner" for m in remaining)
+            if not has_owner and remaining:
+                remaining[0].role = "owner"
+
     db.delete(user)
     db.commit()
 

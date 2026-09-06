@@ -696,16 +696,28 @@ def test_user_can_export_own_data(client):
 # ---------------------------------------------------------------------------
 
 def test_user_can_delete_own_account(client):
+    from deskid.db import get_engine
+    from deskid.models import Org
+    from sqlalchemy.orm import Session
+    from deskid.crypto import decode_access_token
+
     tokens = client.post("/v1/auth/register", json={
         "email": "delete@example.com",
         "password": "password123",
     }).json()
+    org_id = decode_access_token(tokens["access_token"])["org_id"]
+
     r = client.post("/v1/me/delete", headers={"Authorization": f"Bearer {tokens['access_token']}"})
     assert r.status_code == 200
     assert r.json()["ok"] is True
 
     login = client.post("/v1/auth/login", json={"email": "delete@example.com", "password": "password123"})
     assert login.status_code == 401
+
+    # Check that the orphan org was also deleted from DB
+    session = Session(get_engine())
+    assert session.get(Org, org_id) is None
+    session.close()
 
 
 # ---------------------------------------------------------------------------
