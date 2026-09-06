@@ -162,3 +162,30 @@ class SessionOut(BaseModel):
     revoked: bool
     ip_address: str | None = None
     user_agent: str | None = None
+
+
+# Service & Custom Role Registry schemas
+class ServiceCreateRequest(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = None
+    allowed_roles: list[str] = Field(min_length=1)
+    default_role: str | None = None
+
+
+class ServiceUpdateRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    allowed_roles: list[str] | None = None
+    default_role: str | None = None
+
+
+class ServiceOut(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    allowed_roles: list[str]
+    default_role: str | None = None
+    created_at: str
+    updated_at: str
+

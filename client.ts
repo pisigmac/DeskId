@@ -79,6 +79,31 @@ export type AuditLogResponse = {
   events: Array<Record<string, unknown>>
 }
 
+export type ServiceDefinition = {
+  id: string
+  name: string
+  description?: string | null
+  allowed_roles: string[]
+  default_role?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ServiceCreateInput = {
+  id: string
+  name: string
+  description?: string
+  allowed_roles: string[]
+  default_role?: string
+}
+
+export type ServiceUpdateInput = {
+  name?: string
+  description?: string
+  allowed_roles?: string[]
+  default_role?: string
+}
+
 export class DeskID {
   private baseUrl: string
   private apiKey?: string
@@ -271,7 +296,43 @@ export class DeskID {
     const query = qs.toString() ? `?${qs}` : ''
     return this.request('GET', `/v1/admin/reconciliation/events${query}`, undefined, token)
   }
+
+  async registerService(token: string, input: ServiceCreateInput): Promise<ClientResult<ServiceDefinition>> {
+    return this.request('POST', '/v1/admin/services', input, token)
+  }
+
+  async listServices(
+    token: string,
+    params: { q?: string; limit?: number; offset?: number } = {},
+  ): Promise<ClientResult<{ services: ServiceDefinition[]; total: number; offset: number; limit: number }>> {
+    const qs = new URLSearchParams()
+    if (params.q) qs.set('q', params.q)
+    if (params.limit !== undefined) qs.set('limit', String(params.limit))
+    if (params.offset !== undefined) qs.set('offset', String(params.offset))
+    const query = qs.toString() ? `?${qs}` : ''
+    return this.request('GET', `/v1/admin/services${query}`, undefined, token)
+  }
+
+  async getService(token: string, serviceId: string): Promise<ClientResult<ServiceDefinition>> {
+    return this.request('GET', `/v1/admin/services/${serviceId}`, undefined, token)
+  }
+
+  async updateService(
+    token: string,
+    serviceId: string,
+    input: ServiceUpdateInput,
+  ): Promise<ClientResult<ServiceDefinition>> {
+    return this.request('PUT', `/v1/admin/services/${serviceId}`, input, token)
+  }
+
+  async deleteService(
+    token: string,
+    serviceId: string,
+  ): Promise<ClientResult<{ ok: boolean; deleted: boolean; service_id: string }>> {
+    return this.request('DELETE', `/v1/admin/services/${serviceId}`, undefined, token)
+  }
 }
 
 export { DeskID as DeskIDClient, DeskID as DeskIDAuth, DeskID as DeskID, DeskID as DeskAuth, DeskID as PisigmaAuth }
+
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, event
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -182,4 +182,17 @@ class RateLimitEntry(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     key: Mapped[str] = mapped_column(String(255), index=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class ServiceDefinition(Base):
+    __tablename__ = "service_definitions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # audience identifier, e.g. "service-a"
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    allowed_roles: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    default_role: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
 

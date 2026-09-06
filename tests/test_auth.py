@@ -1907,3 +1907,179 @@ def test_audit_chain_verifier_script(client):
         assert "VERIFICATION SUCCESS" in res.stdout
 
 
+def test_service_definition_crud(client):
+    admin = client.post(
+        "/v1/auth/register",
+        json={"email": "svcadmin@example.com", "password": "password123"},
+    ).json()
+    admin_headers = {"Authorization": f"Bearer {admin['access_token']}"}
+
+    regular_user = client.post(
+        "/v1/auth/register",
+        json={"email": "regular@example.com", "password": "password123"},
+    ).json()
+    user_headers = {"Authorization": f"Bearer {regular_user['access_token']}"}
+
+    # 1. Non-admin cannot register service (403)
+    non_admin_reg = client.post(
+        "/v1/admin/services",
+        json={"id": "service-alpha", "name": "Service Alpha", "allowed_roles": ["admin", "viewer"]},
+        headers=user_headers,
+    )
+    assert non_admin_reg.status_code == 403
+
+    # 2. Admin registers service
+    reg_resp = client.post(
+        "/v1/admin/services",
+        json={
+            "id": "service-alpha",
+            "name": "Service Alpha",
+            "description": "Alpha description",
+            "allowed_roles": ["catalog-admin", "schema-manager", "data-reader"],
+            "default_role": "data-reader",
+        },
+        headers=admin_headers,
+    )
+    assert reg_resp.status_code == 201
+    svc_data = reg_resp.json()
+    assert svc_data["id"] == "service-alpha"
+    assert svc_data["name"] == "Service Alpha"
+    assert svc_data["allowed_roles"] == ["catalog-admin", "schema-manager", "data-reader"]
+    assert svc_data["default_role"] == "data-reader"
+
+    # Duplicate registration returns 409
+    dup_resp = client.post(
+        "/v1/admin/services",
+        json={"id": "service-alpha", "name": "Duplicate", "allowed_roles": ["admin"]},
+        headers=admin_headers,
+    )
+    assert dup_resp.status_code == 409
+
+    # Invalid default_role returns 422
+    inv_def = client.post(
+        "/v1/admin/services",
+        json={"id": "service-beta", "name": "Beta", "allowed_roles": ["admin"], "default_role": "nonexistent"},
+        headers=admin_headers,
+    )
+    assert inv_def.status_code == 422
+
+    # 3. List services
+    list_resp = client.get("/v1/admin/services", headers=admin_headers)
+    assert list_resp.status_code == 200
+    services = list_resp.json()["services"]
+    assert any(s["id"] == "service-alpha" for s in services)
+
+    # 4. Get service by ID
+    get_resp = client.get("/v1/admin/services/service-alpha", headers=admin_headers)
+    assert get_resp.status_code == 200
+    assert get_resp.json()["name"] == "Service Alpha"
+
+    # 5. Update service
+    upd_resp = client.put(
+        "/v1/admin/services/service-alpha",
+        json={"name": "Service Alpha Updated", "allowed_roles": ["catalog-admin", "data-reader", "curator"]},
+        headers=admin_headers,
+    )
+    assert upd_resp.status_code == 200
+    assert upd_resp.json()["name"] == "Service Alpha Updated"
+    assert "curator" in upd_resp.json()["allowed_roles"]
+
+    # 6. Delete service
+    del_resp = client.delete("/v1/admin/services/service-alpha", headers=admin_headers)
+    assert del_resp.status_code == 200
+    assert del_resp.json()["deleted"] is True
+
+    # Confirm deletion
+    get_del = client.get("/v1/admin/services/service-alpha", headers=admin_headers)
+    assert get_del.status_code == 404
+
+
+def test_custom_roles_grant_validation_and_token_embedding(client):
+    from deskid.crypto import decode_access_token
+
+    # 1. Admin setup
+    admin = client.post(
+        "/v1/auth/register",
+        json={"email": "customroleadmin@example.com", "password": "password123"},
+    ).json()
+    admin_headers = {"Authorization": f"Bearer {admin['access_token']}"}
+
+    # 2. Register two distinct services with bespoke role taxonomies
+    s1 = client.post(
+        "/v1/admin/services",
+        json={
+            "id": "service-catalog",
+            "name": "Data Catalog Service",
+            "allowed_roles": ["catalog-admin", "curator", "consumer"],
+            "default_role": "consumer",
+        },
+        headers=admin_headers,
+    )
+    assert s1.status_code == 201
+
+    s2 = client.post(
+        "/v1/admin/services",
+        json={
+            "id": "service-compute",
+            "name": "Distributed Compute Engine",
+            "allowed_roles": ["cluster-admin", "job-runner", "metrics-viewer"],
+            "default_role": "metrics-viewer",
+        },
+        headers=admin_headers,
+    )
+    assert s2.status_code == 201
+
+    # 3. Register target user
+    user = client.post(
+        "/v1/auth/register",
+        json={"email": "grantee@example.com", "password": "password123"},
+    ).json()
+    user_token = user["access_token"]
+    user_claims = decode_access_token(user_token)
+    user_id = user_claims["sub"]
+    org_1_id = user_claims["org_id"]
+
+    # 4. Attempt to grant an invalid role for service-catalog (422)
+    inv_grant = client.post(
+        "/v1/admin/grants",
+        json={"user_id": user_id, "audience": "service-catalog", "role": "unsupported-role"},
+        headers=admin_headers,
+    )
+    assert inv_grant.status_code == 422
+    assert "not allowed for service" in inv_grant.json()["error"]
+
+    # 5. Grant valid custom role 'curator' globally (org_id=None) on service-catalog
+    g1 = client.post(
+        "/v1/admin/grants",
+        json={"user_id": user_id, "audience": "service-catalog", "role": "curator"},
+        headers=admin_headers,
+    )
+    assert g1.status_code == 200
+
+    # 6. Grant valid custom role 'job-runner' in org_1 on service-compute
+    g2 = client.post(
+        "/v1/admin/grants",
+        json={"user_id": user_id, "audience": "service-compute", "role": "job-runner", "org_id": org_1_id},
+        headers=admin_headers,
+    )
+    assert g2.status_code == 200
+
+    # 7. User switches into org_1 -> issued token contains custom roles for both audiences
+    switch_resp = client.post(
+        "/v1/auth/switch-org",
+        json={"org_id": org_1_id},
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert switch_resp.status_code == 200
+    token_claims = decode_access_token(switch_resp.json()["access_token"])
+
+    # Verify audience aggregation and specific custom roles
+    assert "deskid" in token_claims["aud"]
+    assert "service-catalog" in token_claims["aud"]
+    assert "service-compute" in token_claims["aud"]
+
+    assert token_claims["roles"]["service-catalog"] == "curator"
+    assert token_claims["roles"]["service-compute"] == "job-runner"
+
+
+
