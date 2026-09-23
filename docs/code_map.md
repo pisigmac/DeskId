@@ -6,11 +6,13 @@ Companion to `AGENTS.md`. Use this instead of listing directories. Paths are rel
 
 ```
 DeskID/
-├── AGENTS.md                 Agent context (read first)
-├── code_map.md               This file
+├── docs/
+│   ├── AGENTS.md                 Agent context (read first)
+│   ├── code_map.md               This file
+│   ├── product_onboarding.md     Downstream product & service onboarding guide
+│   └── user_onboarding.md        User & admin onboarding lifecycle guide
 ├── gaps_enhancements.md      Current features and remaining gaps
 ├── README.md                 Operator/developer README
-├── IMPLEMENTATION_STATUS.md  2026-08 hardening checklist
 ├── pyproject.toml            Package deskid 1.0.0; script deskid
 ├── Dockerfile                python:3.12-slim, pip -e ".[postgres]", CMD deskid
 ├── docker-compose.yml        postgres:16-alpine :5433 + auth :8090
@@ -18,8 +20,8 @@ DeskID/
 ├── .env.example              AUTH_* template
 ├── .gitignore                .venv, .env, *.db — does NOT ignore *.pem
 ├── src/deskid/               Service implementation
-├── tests/test_auth.py        70 pytest tests
-└── migrations/               0002, 0003 + run_migrations.py (no 0001; base via create_all)
+├── tests/test_auth.py        80 pytest tests
+└── migrations/               SQL migrations & registry schemas
 ```
 
 Untracked local secrets often present: `private.pem`, `public.pem`, `.env`. Do not commit.

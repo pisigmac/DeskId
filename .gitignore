@@ -39,3 +39,7 @@ dist/
 run/
 IMPL*.md
 docs/superpowers
+
+# Backlog and Gap tracking & audit documents
+*backlog*.md
+*gap*.md

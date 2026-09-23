@@ -39,6 +39,11 @@ openssl rsa -in private.pem -pubout -out public.pem
 
 OpenAPI: http://127.0.0.1:8090/docs
 
+## Documentation & Guides
+
+- **[Downstream Product & Service Onboarding Guide](docs/product_onboarding.md)**: End-to-end integration walkthrough for connecting downstream services, registering custom roles, stateless JWKS validation, and reconciliation feed polling.
+- **[User Onboarding & Identity Lifecycle Guide](docs/user_onboarding.md)**: Complete guide covering platform admin bootstrapping, open vs closed registration modes, email verification, organization tenancy, and account management.
+
 ## Integrate from another product
 
 1. Send users to Auth login API or OAuth start URLs
