@@ -59,6 +59,9 @@ def run_migrations() -> None:
     if not database_url:
         raise RuntimeError("AUTH_DATABASE_URL is required to run migrations")
 
+    if database_url.startswith("postgresql://") and "+psycopg" not in database_url:
+        database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+
     engine = create_engine(database_url)
     migrations_dir = Path(__file__).parent
 
@@ -90,7 +93,8 @@ def run_migrations() -> None:
             sql = sql_file.read_text(encoding="utf-8")
             for statement in _split_sql(sql):
                 try:
-                    conn.execute(text(statement))
+                    with conn.begin_nested():
+                        conn.execute(text(statement))
                 except (ProgrammingError, OperationalError) as exc:
                     msg = str(exc).lower()
                     # Idempotent guard: skip duplicate column / duplicate table errors

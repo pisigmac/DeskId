@@ -17,7 +17,7 @@ if [ -z "${AUTH_DATABASE_URL:-}" ] && [ -f "${ROOT_DIR}/.env" ]; then
     set +a
 fi
 
-export AUTH_DATABASE_URL="${AUTH_DATABASE_URL:-sqlite:///${ROOT_DIR}/auth.db}"
+export AUTH_DATABASE_URL="${AUTH_DATABASE_URL:-postgresql+psycopg://auth:auth@localhost:5433/auth}"
 export PYTHONPATH="${ROOT_DIR}/src:${PYTHONPATH:-}"
 
 echo "Running migrations against: ${AUTH_DATABASE_URL}"

@@ -20,7 +20,10 @@ def get_engine():
         settings = get_settings()
         connect_args: dict = {}
         kwargs: dict = {}
-        if settings.database_url.startswith("sqlite"):
+        db_url = settings.database_url
+        if db_url.startswith("postgresql://") and "+psycopg" not in db_url:
+            db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+        if db_url.startswith("sqlite"):
             connect_args = {"check_same_thread": False}
         else:
             kwargs = {
@@ -29,7 +32,7 @@ def get_engine():
                 "pool_timeout": settings.db_pool_timeout,
                 "pool_pre_ping": True,
             }
-        _engine = create_engine(settings.database_url, connect_args=connect_args, **kwargs)
+        _engine = create_engine(db_url, connect_args=connect_args, **kwargs)
         _SessionLocal = sessionmaker(bind=_engine, autoflush=False, autocommit=False)
     return _engine
 
