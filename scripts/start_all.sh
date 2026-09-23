@@ -118,7 +118,7 @@ fi
 # Export required environment variables from config
 export AUTH_HOST="${HOST}"
 export AUTH_PORT="${PORT}"
-export AUTH_DATABASE_URL="${AUTH_DATABASE_URL:-sqlite:///${ROOT_DIR}/auth.db}"
+export AUTH_DATABASE_URL="${AUTH_DATABASE_URL:-postgresql+psycopg://auth:auth@localhost:5433/auth}"
 export AUTH_ISSUER="${AUTH_ISSUER:-}"
 export AUTH_JWT_PRIVATE_KEY_FILE="${AUTH_JWT_PRIVATE_KEY_FILE:-${ROOT_DIR}/private.pem}"
 export AUTH_JWT_PUBLIC_KEY_FILE="${AUTH_JWT_PUBLIC_KEY_FILE:-${ROOT_DIR}/public.pem}"

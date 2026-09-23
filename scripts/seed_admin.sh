@@ -118,10 +118,22 @@ if echo "${REG_RESP}" | grep -q "access_token"; then
     echo -e "${GREEN}✓ Admin account registered successfully!${NC}"
 elif echo "${REG_RESP}" | grep -q "verification_required"; then
     echo -e "${YELLOW}Notice: Email verification is required by server policy.${NC}"
-    # Auto-verify local dev SQLite database
-    if [ -f "${ROOT_DIR}/auth.db" ] && command -v sqlite3 >/dev/null 2>&1; then
-        sqlite3 "${ROOT_DIR}/auth.db" "UPDATE users SET email_verified_at = CURRENT_TIMESTAMP WHERE email = '${ADMIN_EMAIL}';" 2>/dev/null || true
-        echo -e "${GREEN}✓ Auto-verified admin email in local database.${NC}"
+    # Auto-verify admin email in database
+    if [ -n "${AUTH_DATABASE_URL:-}" ]; then
+        python3 -c "
+import os
+from sqlalchemy import create_engine, text
+db_url = os.environ.get('AUTH_DATABASE_URL', '')
+if db_url.startswith('postgresql://') and '+psycopg' not in db_url:
+    db_url = db_url.replace('postgresql://', 'postgresql+psycopg://', 1)
+try:
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        conn.execute(text(\"UPDATE users SET email_verified_at = CURRENT_TIMESTAMP WHERE email = '${ADMIN_EMAIL}'\"))
+except Exception:
+    pass
+" 2>/dev/null || true
+        echo -e "${GREEN}✓ Auto-verified admin email in database.${NC}"
     fi
 elif echo "${REG_RESP}" | grep -q "Email already registered"; then
     echo -e "${YELLOW}Notice: Account already exists. Attempting login verification...${NC}"
@@ -137,8 +149,20 @@ LOGIN_RESP="$(curl -s -X POST "${BASE_URL}/v1/auth/login" \
 
 ACCESS_TOKEN="$(echo "${LOGIN_RESP}" | grep -o '"access_token":"[^"]*' | cut -d'"' -f4 || true)"
 
-if [ -z "${ACCESS_TOKEN}" ] && [ -f "${ROOT_DIR}/auth.db" ] && command -v sqlite3 >/dev/null 2>&1; then
-    sqlite3 "${ROOT_DIR}/auth.db" "UPDATE users SET email_verified_at = CURRENT_TIMESTAMP WHERE email = '${ADMIN_EMAIL}';" 2>/dev/null || true
+if [ -z "${ACCESS_TOKEN}" ] && [ -n "${AUTH_DATABASE_URL:-}" ]; then
+    python3 -c "
+import os
+from sqlalchemy import create_engine, text
+db_url = os.environ.get('AUTH_DATABASE_URL', '')
+if db_url.startswith('postgresql://') and '+psycopg' not in db_url:
+    db_url = db_url.replace('postgresql://', 'postgresql+psycopg://', 1)
+try:
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        conn.execute(text(\"UPDATE users SET email_verified_at = CURRENT_TIMESTAMP WHERE email = '${ADMIN_EMAIL}'\"))
+except Exception:
+    pass
+" 2>/dev/null || true
     LOGIN_RESP="$(curl -s -X POST "${BASE_URL}/v1/auth/login" \
         -H "Content-Type: application/json" \
         -d "{\"email\":\"${ADMIN_EMAIL}\",\"password\":\"${ADMIN_PASSWORD}\"}")"

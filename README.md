@@ -24,7 +24,7 @@ cd DeskID
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
-# Edit .env — at minimum set AUTH_JWT_PRIVATE_KEY / AUTH_JWT_PUBLIC_KEY
+# Edit .env — set AUTH_DATABASE_URL (PostgreSQL) and RSA keys
 deskid
 # → http://127.0.0.1:8090
 ```

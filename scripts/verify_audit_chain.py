@@ -3,7 +3,7 @@
 
 Usage:
     # Verify from live database:
-    AUTH_DATABASE_URL="sqlite+pysqlite:////tmp/deskid.db" python3 scripts/verify_audit_chain.py
+    AUTH_DATABASE_URL="postgresql+psycopg://auth:auth@localhost:5433/auth" python3 scripts/verify_audit_chain.py
 
     # Verify from exported JSON file:
     python3 scripts/verify_audit_chain.py --file audit_export.json
@@ -105,6 +105,8 @@ def main():
         if not db_url:
             print("Error: Specify --file or set AUTH_DATABASE_URL.")
             sys.exit(1)
+        if db_url.startswith("postgresql://") and "+psycopg" not in db_url:
+            db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
         from sqlalchemy import create_engine, text
         engine = create_engine(db_url)
         with engine.connect() as conn:

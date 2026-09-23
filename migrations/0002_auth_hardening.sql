@@ -46,5 +46,5 @@ CREATE INDEX IF NOT EXISTS ix_audit_log_events_action_occurred ON audit_log_even
 -- Add is_active and deleted_at to users.
 -- Run via migrations/run_migrations.py for idempotent application; the runner skips
 -- duplicate-column / already-exists errors on both PostgreSQL and SQLite.
-ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1;
-ALTER TABLE users ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
