@@ -26,8 +26,9 @@ if [ -f "${ROOT_DIR}/.env" ]; then
 fi
 
 PORT="${AUTH_PORT:-8090}"
-HOST="${AUTH_HOST:-}"
+HOST="${AUTH_HOST:-127.0.0.1}"
 PID_FILE="${ROOT_DIR}/.auth.pid"
+FRONTEND_PID_FILE="${ROOT_DIR}/.frontend.pid"
 BASE_URL="${AUTH_ISSUER:-}"
 if [ -z "${BASE_URL}" ] && [ -n "${HOST}" ]; then
     BASE_URL="http://${HOST}:${PORT}"
@@ -37,20 +38,53 @@ echo -e "${BLUE}${BOLD}=== DeskID Service Status & Diagnostics ===${NC}\n"
 
 # 1. Process & Container Status
 echo -e "${BOLD}[1] Process & Container Status:${NC}"
+DOCKER_AUTH_RUNNING=false
+if command -v docker >/dev/null 2>&1 && [ -f "${ROOT_DIR}/docker-compose.yml" ]; then
+    if docker compose -f "${ROOT_DIR}/docker-compose.yml" ps --services --filter "status=running" 2>/dev/null | grep -q "auth"; then
+        DOCKER_AUTH_RUNNING=true
+    fi
+fi
+
 if [ -f "${PID_FILE}" ]; then
     PID="$(cat "${PID_FILE}" 2>/dev/null || true)"
     if [ -n "${PID}" ] && kill -0 "${PID}" 2>/dev/null; then
-        echo -e "  Local Process:   ${GREEN}● RUNNING${NC} (PID: ${PID})"
+        echo -e "  Local Host Process:  ${GREEN}● RUNNING${NC} (PID: ${PID})"
     else
-        echo -e "  Local Process:   ${RED}○ STOPPED${NC} (stale PID file)"
+        echo -e "  Local Host Process:  ${RED}○ STOPPED${NC} (stale PID file)"
     fi
 else
     LINGERING_PID="$(pgrep -f "deskid.app:app" 2>/dev/null | head -n 1 || true)"
     if [ -n "${LINGERING_PID}" ]; then
-        echo -e "  Local Process:   ${GREEN}● RUNNING${NC} (PID: ${LINGERING_PID})"
+        echo -e "  Local Host Process:  ${GREEN}● RUNNING${NC} (PID: ${LINGERING_PID})"
+    elif [ "${DOCKER_AUTH_RUNNING}" = true ]; then
+        echo -e "  Local Host Process:  ${CYAN}○ NOT RUNNING${NC} (Running in Docker container)"
     else
-        echo -e "  Local Process:   ${YELLOW}○ NOT RUNNING${NC}"
+        echo -e "  Local Host Process:  ${YELLOW}○ NOT RUNNING${NC}"
     fi
+fi
+
+# Frontend Dev Process Status
+if [ -f "${FRONTEND_PID_FILE}" ]; then
+    FPID="$(cat "${FRONTEND_PID_FILE}" 2>/dev/null || true)"
+    if [ -n "${FPID}" ] && kill -0 "${FPID}" 2>/dev/null; then
+        echo -e "  Frontend Dev Server: ${GREEN}● RUNNING${NC} (PID: ${FPID}, http://localhost:5173)"
+    else
+        echo -e "  Frontend Dev Server: ${YELLOW}○ STOPPED${NC}"
+    fi
+else
+    LINGERING_VITE="$(pgrep -f "vite" 2>/dev/null | head -n 1 || true)"
+    if [ -n "${LINGERING_VITE}" ]; then
+        echo -e "  Frontend Dev Server: ${GREEN}● RUNNING${NC} (PID: ${LINGERING_VITE}, http://localhost:5173)"
+    else
+        echo -e "  Frontend Dev Server: ${YELLOW}○ NOT RUNNING${NC} (Production SPA served via backend)"
+    fi
+fi
+
+# Frontend Build Status
+if [ -d "${ROOT_DIR}/frontend/dist" ]; then
+    echo -e "  Compiled SPA Bundle: ${GREEN}● READY${NC} (${ROOT_DIR}/frontend/dist)"
+else
+    echo -e "  Compiled SPA Bundle: ${YELLOW}○ NOT COMPILED${NC} (Run: cd frontend && pnpm run build)"
 fi
 
 if command -v docker >/dev/null 2>&1 && [ -f "${ROOT_DIR}/docker-compose.yml" ]; then
@@ -62,19 +96,14 @@ fi
 
 # 2. Port Binding Check
 echo -e "\n${BOLD}[2] Port Binding Check (Port ${PORT}):${NC}"
-if command -v lsof >/dev/null 2>&1; then
-    PORT_CHECK="$(lsof -i :${PORT} 2>/dev/null || true)"
-    if [ -n "${PORT_CHECK}" ]; then
-        echo -e "  Port ${PORT}: ${GREEN}LISTENING${NC}\n${PORT_CHECK}"
-    else
-        echo -e "  Port ${PORT}: ${YELLOW}NOT LISTENING${NC}"
-    fi
-elif command -v ss >/dev/null 2>&1; then
-    if ss -tuln | grep -q ":${PORT} "; then
-        echo -e "  Port ${PORT}: ${GREEN}LISTENING${NC}"
-    else
-        echo -e "  Port ${PORT}: ${YELLOW}NOT LISTENING${NC}"
-    fi
+if command -v ss >/dev/null 2>&1 && ss -tuln | grep -qE ":${PORT}\b"; then
+    echo -e "  Port ${PORT}: ${GREEN}LISTENING${NC}"
+elif command -v lsof >/dev/null 2>&1 && lsof -i :${PORT} >/dev/null 2>&1; then
+    echo -e "  Port ${PORT}: ${GREEN}LISTENING${NC}"
+elif nc -z 127.0.0.1 "${PORT}" 2>/dev/null; then
+    echo -e "  Port ${PORT}: ${GREEN}LISTENING${NC}"
+else
+    echo -e "  Port ${PORT}: ${YELLOW}NOT LISTENING${NC}"
 fi
 
 # 3. Healthcheck Endpoint
@@ -92,14 +121,6 @@ fi
 
 # 4. Rate Limiting Configuration & Distributed Backend Check
 echo -e "\n${BOLD}[4] Rate Limiting Status:${NC}"
-# Load env if present
-if [ -f "${ROOT_DIR}/.env" ]; then
-    set -a
-    # shellcheck disable=SC1091
-    source "${ROOT_DIR}/.env"
-    set +a
-fi
-
 RL_ENABLED="${AUTH_RATE_LIMIT_ENABLED:-true}"
 RL_BACKEND="${AUTH_RATE_LIMIT_BACKEND:-memory}"
 RL_REDIS_URL="${AUTH_RATE_LIMIT_REDIS_URL:-}"
@@ -130,4 +151,3 @@ METRICS_RESP="$(curl -s "${BASE_URL}/metrics" 2>/dev/null || echo "{}")"
 echo -e "  Metrics:         ${CYAN}${METRICS_RESP}${NC}"
 
 echo -e "\n--------------------------------------------------------"
-

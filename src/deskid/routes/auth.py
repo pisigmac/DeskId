@@ -11,7 +11,13 @@ from sqlalchemy.orm import Session
 from deskid.config import get_settings
 from deskid.crypto import decode_access_token
 from deskid.db import get_db
-from deskid.mail_client import build_password_reset_email, build_verification_email, send_mail
+from deskid.mail_client import (
+    DEV_MAILBOX,
+    build_magic_link_email,
+    build_password_reset_email,
+    build_verification_email,
+    send_mail,
+)
 from deskid.metrics import inc
 from deskid.middleware import get_request_context
 from deskid.models import User
@@ -21,6 +27,9 @@ from deskid.schemas import (
     ForgotPasswordRequest,
     LoginRequest,
     LogoutRequest,
+    MagicLinkRequest,
+    MagicLinkVerifyRequest,
+    OtpVerifyRequest,
     RefreshRequest,
     RegisterRequest,
     RegisterResponse,
@@ -35,7 +44,10 @@ from deskid.schemas import (
 from deskid.services import (
     authenticate_password,
     change_password,
+    consume_magic_link_token,
+    consume_otp_code,
     consume_password_reset_token,
+    create_magic_link_token,
     create_password_reset_token,
     create_user_with_password,
     create_verification_token,
@@ -310,3 +322,108 @@ def revoke_my_session(
         raise HTTPException(status_code=404, detail="Session not found")
     _emit(db, "user.revoke_session", user.id, resource_id=session_id)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Passwordless Authentication & OTP (TASK-013)
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/magic-link/request",
+    dependencies=[Depends(rate_limit_dependency("magic_link"))],
+)
+def request_magic_link(
+    body: MagicLinkRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    settings = get_settings()
+    if not settings.enable_otp:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Passwordless authentication is disabled on this server.",
+        )
+
+    ctx = get_request_context()
+    result = create_magic_link_token(
+        db,
+        email=body.email,
+        ip_address=ctx.get("ip"),
+        user_agent=ctx.get("user_agent"),
+    )
+
+    if result:
+        raw_token, otp_code, user = result
+        try:
+            send_mail(build_magic_link_email(user.email, raw_token, otp_code))
+        except Exception as exc:
+            logger.warning("magic_link_mail_failed user_id=%s email=%s error=%s", user.id, user.email, exc)
+        _emit(db, "auth.magic_link_requested", user.id, resource_id=user.id)
+
+    # Always return 200 generic response to prevent email enumeration
+    return {"ok": True, "message": "If this email is registered, sign-in instructions have been sent."}
+
+
+@router.post(
+    "/magic-link/verify",
+    response_model=TokenResponse,
+    dependencies=[Depends(rate_limit_dependency("magic_link"))],
+)
+def verify_magic_link(
+    body: MagicLinkVerifyRequest,
+    db: Session = Depends(get_db),
+) -> TokenResponse:
+    settings = get_settings()
+    if not settings.enable_otp:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Passwordless authentication is disabled on this server.",
+        )
+
+    result = consume_magic_link_token(db, body.token)
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired magic link. Please request a new one.",
+        )
+
+    user, token_resp = result
+    _emit(db, "auth.magic_link_verified", user.id, resource_id=user.id)
+    inc("auth_login_magic_link_total")
+    return token_resp
+
+
+@router.post(
+    "/otp/verify",
+    response_model=TokenResponse,
+    dependencies=[Depends(rate_limit_dependency("otp_verify"))],
+)
+def verify_otp(
+    body: OtpVerifyRequest,
+    db: Session = Depends(get_db),
+) -> TokenResponse:
+    settings = get_settings()
+    if not settings.enable_otp:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Passwordless authentication is disabled on this server.",
+        )
+
+    try:
+        user, token_resp = consume_otp_code(db, body.email, body.code)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    _emit(db, "auth.otp_verified", user.id, resource_id=user.id)
+    inc("auth_login_otp_total")
+    return token_resp
+
+
+@router.get("/dev/mailbox")
+def get_dev_mailbox() -> list[dict]:
+    """Retrieve in-memory captured emails (only active in console/dev mode)."""
+    settings = get_settings()
+    mode = (settings.mail_mode or "service").lower().strip()
+    if mode not in ("console", "dev"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Dev mailbox only available in console mode.")
+    return DEV_MAILBOX
+

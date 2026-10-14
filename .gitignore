@@ -43,3 +43,15 @@ docs/superpowers
 # Backlog and Gap tracking & audit documents
 *backlog*.md
 *gap*.md
+backlog.d/
+
+# Node / Frontend / SDKs
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+
+# Process IDs
+*.pid
+**/*.pid
+

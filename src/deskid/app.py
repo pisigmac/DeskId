@@ -183,6 +183,62 @@ def create_app() -> FastAPI:
     app.include_router(orgs_router, prefix="/v1")
     app.include_router(admin_router, prefix="/v1")
     app.include_router(me_router, prefix="/v1")
+
+    # ------------------------------------------------------------------
+    # Mount Frontend Single Page Application (SPA) if built
+    # ------------------------------------------------------------------
+    from pathlib import Path
+    from fastapi.staticfiles import StaticFiles
+
+    frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    if (frontend_dist / "assets").is_dir():
+        app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="frontend_assets")
+
+    if (frontend_dist / "index.html").is_file():
+        def _serve_spa() -> FileResponse:
+            index_path = frontend_dist / "index.html"
+            resp = FileResponse(index_path, media_type="text/html")
+            resp.headers["Content-Security-Policy"] = (
+                "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                "font-src 'self' https://fonts.gstatic.com data:; "
+                "script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: https:"
+            )
+            return resp
+
+        # Portal route
+        @app.get("/portal", include_in_schema=False)
+        @app.get("/portal/{full_path:path}", include_in_schema=False)
+        def portal_spa_fallback(full_path: str = "") -> FileResponse:
+            return _serve_spa()
+
+        # Auth SPA routes
+        @app.get("/auth/login", include_in_schema=False)
+        @app.get("/auth/register", include_in_schema=False)
+        @app.get("/auth/forgot-password", include_in_schema=False)
+        @app.get("/auth/reset-password", include_in_schema=False)
+        @app.get("/auth/verify-email", include_in_schema=False)
+        @app.get("/auth/callback", include_in_schema=False)
+        @app.get("/login", include_in_schema=False)
+        @app.get("/register", include_in_schema=False)
+        def auth_spa_routes() -> FileResponse:
+            return _serve_spa()
+
+        # Account SPA routes
+        @app.get("/account", include_in_schema=False)
+        @app.get("/account/{full_path:path}", include_in_schema=False)
+        def account_spa_routes(full_path: str = "") -> FileResponse:
+            return _serve_spa()
+
+        # Admin SPA routes
+        @app.get("/admin", include_in_schema=False)
+        @app.get("/admin/users", include_in_schema=False)
+        @app.get("/admin/organizations", include_in_schema=False)
+        @app.get("/admin/grants", include_in_schema=False)
+        @app.get("/admin/services", include_in_schema=False)
+        @app.get("/admin/audit", include_in_schema=False)
+        def admin_spa_routes() -> FileResponse:
+            return _serve_spa()
+
     return app
 
 

@@ -226,3 +226,27 @@ Users can export or delete their account data without administrative interventio
   POST /v1/me/delete
   ```
   Initiates account termination, revokes all sessions, anonymizes audit entries, and handles owner succession in organizations.
+
+---
+
+## 8. Passwordless Authentication & Modern Drop-in UI
+
+To maximize user adoption and minimize drop-off, DeskID supports passwordless authentication and drop-in UI components:
+
+### 1. Email Magic Links & One-Time Passcodes (OTP)
+Users can sign in without a password:
+1. User enters their email in the hosted portal or `<DeskIdModal />`.
+2. DeskID dispatches a secure 6-digit numeric OTP and a 1-click magic link to the user's inbox (15-minute TTL).
+3. Entering the code or clicking the magic link returns an RS256 Bearer access token and refresh token immediately.
+
+### 2. Live Password Requirement Checklist & Plain-Language Errors
+- **Interactive Checklist:** As users type their password during registration or reset, an interactive checklist visually verifies compliance in real time (e.g. 8+ characters, at least 1 number).
+- **Friendly Error Copy:** Low-level HTTP rate limit errors and lockouts are mapped to helpful, plain-language guidance:
+  > *"Too many login attempts. For security, please wait 3 minutes before trying again or reset your password."*
+
+### 3. Drop-in Frontend Components (`@deskid/react`, `@deskid/vue`, `@deskid/nextjs`)
+Consumer applications can embed complete authentication UI in seconds:
+- `<SignInButton mode="modal">`: Opens an accessible modal with password and OTP tabs.
+- `<UserButton showTenantSwitch={true}>`: Displays user avatar, active organization, and tenant switcher.
+- For complete setup guides, see **[packages/README.md](../packages/README.md)**.
+

@@ -2095,5 +2095,153 @@ def test_custom_roles_grant_validation_and_token_embedding(client):
     assert "must be one of allowed_roles" in inv_put.json()["error"]
 
 
+def test_magic_link_and_otp_lifecycle(client, monkeypatch):
+    """Test full OTP verification flow with console mail mode."""
+    from deskid.mail_client import DEV_MAILBOX, clear_dev_mailbox
+    clear_dev_mailbox()
+
+    # 1. Register a user
+    client.post("/v1/auth/register", json={
+        "email": "otptest@example.com",
+        "password": "Password123!",
+    })
+
+    # 2. Request OTP and magic link
+    res = client.post("/v1/auth/magic-link/request", json={"email": "otptest@example.com"})
+    assert res.status_code == 200
+    assert res.json()["ok"] is True
+
+    # 3. Verify email was captured in dev mailbox
+    assert len(DEV_MAILBOX) >= 1
+    mail = DEV_MAILBOX[-1]
+    assert mail["to"] == "otptest@example.com"
+    otp_code = mail["otp_code"]
+    assert len(otp_code) == 6
+
+    # 4. Verify OTP code
+    otp_res = client.post("/v1/auth/otp/verify", json={
+        "email": "otptest@example.com",
+        "code": otp_code,
+    })
+    assert otp_res.status_code == 200
+    data = otp_res.json()
+    assert "access_token" in data
+    assert "refresh_token" in data
+
+    # 5. Access protected resource with issued token
+    me_res = client.get("/v1/auth/me", headers={"Authorization": f"Bearer {data['access_token']}"})
+    assert me_res.status_code == 200
+    assert me_res.json()["email"] == "otptest@example.com"
+
+    # 6. Reusing same OTP must fail (single-use semantics)
+    reuse_res = client.post("/v1/auth/otp/verify", json={
+        "email": "otptest@example.com",
+        "code": otp_code,
+    })
+    assert reuse_res.status_code == 400
+
+
+def test_magic_link_url_verification(client):
+    """Test 1-click magic link URL token verification."""
+    from deskid.mail_client import DEV_MAILBOX, clear_dev_mailbox
+    clear_dev_mailbox()
+
+    client.post("/v1/auth/register", json={
+        "email": "linktest@example.com",
+        "password": "Password123!",
+    })
+
+    res = client.post("/v1/auth/magic-link/request", json={"email": "linktest@example.com"})
+    assert res.status_code == 200
+
+    mail = DEV_MAILBOX[-1]
+    raw_token = mail["token"]
+
+    # Verify via magic-link endpoint
+    link_res = client.post("/v1/auth/magic-link/verify", json={"token": raw_token})
+    assert link_res.status_code == 200
+    assert "access_token" in link_res.json()
+
+    # Replay attempt fails
+    replay_res = client.post("/v1/auth/magic-link/verify", json={"token": raw_token})
+    assert replay_res.status_code == 400
+
+
+def test_otp_brute_force_cutoff(client):
+    """5 consecutive incorrect attempts permanently invalidates the OTP token."""
+    from deskid.mail_client import DEV_MAILBOX, clear_dev_mailbox
+    clear_dev_mailbox()
+
+    client.post("/v1/auth/register", json={
+        "email": "bruteforce@example.com",
+        "password": "Password123!",
+    })
+
+    client.post("/v1/auth/magic-link/request", json={"email": "bruteforce@example.com"})
+    mail = DEV_MAILBOX[-1]
+    real_otp = mail["otp_code"]
+
+    # 4 bad attempts
+    for _ in range(4):
+        bad_res = client.post("/v1/auth/otp/verify", json={
+            "email": "bruteforce@example.com",
+            "code": "000000" if real_otp != "000000" else "111111",
+        })
+        assert bad_res.status_code == 400
+        assert "attempt(s) remaining" in bad_res.json()["error"]
+
+    # 5th bad attempt exhausts the token
+    exhaust_res = client.post("/v1/auth/otp/verify", json={
+        "email": "bruteforce@example.com",
+        "code": "000000" if real_otp != "000000" else "111111",
+    })
+    assert exhaust_res.status_code == 400
+    assert "invalid" in exhaust_res.json()["error"].lower()
+
+    # Even the correct code now fails because the token was burned (or rate limited)
+    final_res = client.post("/v1/auth/otp/verify", json={
+        "email": "bruteforce@example.com",
+        "code": real_otp,
+    })
+    assert final_res.status_code in (400, 429)
+
+
+def test_otp_disabled_toggle(client, monkeypatch):
+    """When AUTH_ENABLE_OTP=false, passwordless endpoints return 501 Not Implemented."""
+    from deskid.config import get_settings
+    settings = get_settings()
+    monkeypatch.setattr(settings, "enable_otp", False)
+
+    r1 = client.post("/v1/auth/magic-link/request", json={"email": "any@example.com"})
+    assert r1.status_code == 501
+    assert "disabled" in r1.json()["error"]
+
+    r2 = client.post("/v1/auth/otp/verify", json={"email": "any@example.com", "code": "123456"})
+    assert r2.status_code == 501
+
+    r3 = client.post("/v1/auth/magic-link/verify", json={"token": "sometoken"})
+    assert r3.status_code == 501
+
+
+def test_mail_mode_disabled(client, monkeypatch):
+    """When AUTH_MAIL_MODE=disabled, requests succeed but no mail is captured."""
+    from deskid.config import get_settings
+    from deskid.mail_client import DEV_MAILBOX, clear_dev_mailbox
+    clear_dev_mailbox()
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "mail_mode", "disabled")
+
+    client.post("/v1/auth/register", json={
+        "email": "nomail@example.com",
+        "password": "Password123!",
+    })
+
+    res = client.post("/v1/auth/magic-link/request", json={"email": "nomail@example.com"})
+    assert res.status_code == 200
+    assert len(DEV_MAILBOX) == 0
+
+
+
 
 

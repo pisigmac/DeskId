@@ -82,6 +82,12 @@ class Settings(BaseSettings):
     mail_api_key: str = ""
     mail_from_email: str = ""
     mail_from_name: str = ""
+    mail_mode: str = "service"  # 'service' | 'console' | 'disabled'
+
+    # Passwordless Authentication & OTP (TASK-013)
+    enable_otp: bool = True
+    otp_ttl_minutes: int = 10
+    otp_max_attempts: int = 5
 
     # Rate limiting (policy defaults).
     rate_limit_enabled: bool = True
@@ -100,6 +106,10 @@ class Settings(BaseSettings):
     rate_limit_reset_password_window_seconds: int = 60
     rate_limit_refresh: int = 20
     rate_limit_refresh_window_seconds: int = 60
+    rate_limit_magic_link: int = 3
+    rate_limit_magic_link_window_seconds: int = 600
+    rate_limit_otp_verify: int = 5
+    rate_limit_otp_verify_window_seconds: int = 60
 
     # Trust X-Forwarded-For / Forwarded headers for rate-limit IP extraction.
     # Enable ONLY when Auth is behind a trusted reverse proxy.

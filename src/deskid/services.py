@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hmac
 import json
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
@@ -20,6 +22,7 @@ from deskid.models import (
     AuditLogEvent,
     EmailVerificationToken,
     Identity,
+    MagicLinkToken,
     Membership,
     Org,
     PasswordResetToken,
@@ -375,6 +378,115 @@ def reset_user_password(db: Session, user: User, password: str) -> None:
     user.password_hash = hash_password(password)
     revoke_all_user_sessions(db, user, commit=False)
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Passwordless Magic Links & One-Time Passcodes (OTP)
+# ---------------------------------------------------------------------------
+
+def create_magic_link_token(
+    db: Session,
+    email: str,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+) -> tuple[str, str, User] | None:
+    user = db.query(User).filter(User.email == email.lower().strip()).one_or_none()
+    if not user or not user.is_active or user.deleted_at is not None:
+        return None
+
+    settings = get_settings()
+    raw_token = generate_urlsafe_token()
+    otp_code = f"{secrets.randbelow(1_000_000):06d}"
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=settings.otp_ttl_minutes)
+
+    token = MagicLinkToken(
+        user_id=user.id,
+        token_hash=hash_token(raw_token),
+        otp_hash=hash_token(otp_code),
+        expires_at=expires_at,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+    db.add(token)
+    db.commit()
+    return raw_token, otp_code, user
+
+
+def consume_magic_link_token(db: Session, raw_token: str) -> tuple[User, TokenResponse] | None:
+    token_hash = hash_token(raw_token)
+    now = datetime.now(timezone.utc)
+    row = (
+        db.query(MagicLinkToken)
+        .filter(
+            MagicLinkToken.token_hash == token_hash,
+            MagicLinkToken.used_at.is_(None),
+            MagicLinkToken.expires_at > now,
+        )
+        .first()
+    )
+    if not row:
+        return None
+
+    user = db.query(User).filter(User.id == row.user_id).one_or_none()
+    if not user or not user.is_active or user.deleted_at is not None:
+        return None
+
+    row.used_at = now
+    if user.email_verified_at is None:
+        user.email_verified_at = now
+    db.commit()
+    db.refresh(user)
+
+    token_resp = issue_tokens(db, user)
+    return user, token_resp
+
+
+def consume_otp_code(db: Session, email: str, code: str) -> tuple[User, TokenResponse]:
+    user = db.query(User).filter(User.email == email.lower().strip()).one_or_none()
+    if not user or not user.is_active or user.deleted_at is not None:
+        raise ValueError("Invalid email or code")
+
+    now = datetime.now(timezone.utc)
+    row = (
+        db.query(MagicLinkToken)
+        .filter(
+            MagicLinkToken.user_id == user.id,
+            MagicLinkToken.used_at.is_(None),
+            MagicLinkToken.expires_at > now,
+        )
+        .order_by(MagicLinkToken.created_at.desc())
+        .first()
+    )
+    if not row:
+        raise ValueError("Code has expired or is invalid. Please request a new code.")
+
+    settings = get_settings()
+    if row.attempts_count >= settings.otp_max_attempts:
+        row.used_at = now
+        db.commit()
+        raise ValueError("Too many incorrect attempts. This code is now invalid. Please request a new one.")
+
+    code_hash = hash_token(code.strip())
+    if not hmac.compare_digest(row.otp_hash, code_hash):
+        row.attempts_count += 1
+        db.commit()
+        remaining = settings.otp_max_attempts - row.attempts_count
+        if remaining <= 0:
+            row.used_at = now
+            db.commit()
+            raise ValueError("Too many incorrect attempts. This code is now invalid. Please request a new one.")
+        raise ValueError(f"Incorrect code. {remaining} attempt(s) remaining.")
+
+    row.used_at = now
+    if user.email_verified_at is None:
+        user.email_verified_at = now
+    db.commit()
+    db.refresh(user)
+
+    token_resp = issue_tokens(db, user)
+    return user, token_resp
+
 
 
 # ---------------------------------------------------------------------------

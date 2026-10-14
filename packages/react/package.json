@@ -1,0 +1,32 @@
+{
+  "name": "@deskid/react",
+  "version": "1.0.0",
+  "description": "Drop-in React authentication components (<SignInButton />, <DeskIdModal />, <UserButton />) and hooks for DeskID",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@deskid/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
+    "typescript": "^5.7.2"
+  },
+  "keywords": ["deskid", "react", "auth", "signin", "modal", "jwt", "oidc", "iam"],
+  "license": "Apache-2.0"
+}

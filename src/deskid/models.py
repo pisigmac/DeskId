@@ -43,6 +43,7 @@ class User(Base):
     refresh_tokens: Mapped[list[RefreshToken]] = relationship(back_populates="user", foreign_keys="RefreshToken.user_id")
     verification_tokens: Mapped[list[EmailVerificationToken]] = relationship(back_populates="user")
     reset_tokens: Mapped[list[PasswordResetToken]] = relationship(back_populates="user")
+    magic_link_tokens: Mapped[list[MagicLinkToken]] = relationship(back_populates="user")
 
 
 class Identity(Base):
@@ -137,6 +138,23 @@ class PasswordResetToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     user: Mapped[User] = relationship(back_populates="reset_tokens")
+
+
+class MagicLinkToken(Base):
+    __tablename__ = "magic_link_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    otp_hash: Mapped[str] = mapped_column(String(64), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts_count: Mapped[int] = mapped_column(Integer, default=0)
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    user: Mapped[User] = relationship(back_populates="magic_link_tokens")
 
 
 class AuditLogEvent(Base):

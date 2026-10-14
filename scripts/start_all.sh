@@ -2,7 +2,8 @@
 # ==============================================================================
 # DeskID — Service Startup Utility (start_all.sh)
 # ==============================================================================
-# Starts all required DeskID services (database, migrations, auth server).
+# Starts all required DeskID services (database, migrations, auth server,
+# and compiled Vue 3 Portal / Vite dev server).
 # Supports both Local Python/SQLite mode and Docker Compose mode.
 # ==============================================================================
 
@@ -36,20 +37,24 @@ fi
 # Default configurations from environment / config file
 MODE="auto" # auto | local | docker
 RUN_FOREGROUND=false
+START_FRONTEND_DEV=false
 PORT="${AUTH_PORT:-}"
 HOST="${AUTH_HOST:-}"
 RATE_LIMIT_ENABLED_OVERRIDE=""
 RATE_LIMIT_BACKEND_OVERRIDE=""
 REDIS_URL_OVERRIDE=""
 PID_FILE="${ROOT_DIR}/.auth.pid"
+FRONTEND_PID_FILE="${ROOT_DIR}/.frontend.pid"
 LOG_FILE="${ROOT_DIR}/auth_service.log"
+FRONTEND_LOG_FILE="${ROOT_DIR}/frontend_dev.log"
 
 usage() {
     echo -e "${BOLD}Usage:${NC} $0 [options]"
     echo ""
     echo "Options:"
     echo "  -m, --mode <local|docker>             Execution mode (default: auto-detect)"
-    echo "  -f, --foreground                      Run server in foreground (default: background daemon)"
+    echo "  -f, --foreground                      Run backend server in foreground (default: background daemon)"
+    echo "  --frontend-dev                        Also start Vite frontend dev server with hot-reload"
     echo "  -p, --port <port>                     Override HTTP port (from AUTH_PORT in config)"
     echo "  -h, --host <host>                     Override HTTP host (from AUTH_HOST in config)"
     echo "  --rate-limit-backend <memory|db|redis> Storage backend for rate limiting"
@@ -68,6 +73,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -f|--foreground)
             RUN_FOREGROUND=true
+            shift
+            ;;
+        --frontend-dev)
+            START_FRONTEND_DEV=true
             shift
             ;;
         -p|--port)
@@ -113,6 +122,16 @@ echo -e "${BLUE}${BOLD}======================================================${N
 if [ ! -f "${ROOT_DIR}/private.pem" ] || [ ! -f "${ROOT_DIR}/public.pem" ]; then
     echo -e "${YELLOW}RSA keys missing. Generating new RSA 2048-bit keypair...${NC}"
     bash "${SCRIPT_DIR}/generate_keys.sh" "${ROOT_DIR}/private.pem" "${ROOT_DIR}/public.pem"
+fi
+
+# Ensure Frontend SPA is built if running in local mode
+if [ -d "${ROOT_DIR}/frontend" ] && [ ! -d "${ROOT_DIR}/frontend/dist" ]; then
+    echo -e "${YELLOW}Frontend SPA bundle not found. Building with pnpm...${NC}"
+    if command -v pnpm >/dev/null 2>&1; then
+        (cd "${ROOT_DIR}/frontend" && pnpm install && pnpm run build)
+    elif command -v npm >/dev/null 2>&1; then
+        (cd "${ROOT_DIR}/frontend" && npm install && npm run build)
+    fi
 fi
 
 # Export required environment variables from config
@@ -161,14 +180,14 @@ if [ "${MODE}" = "docker" ]; then
         echo -e "${RED}Error: docker is not installed or not in PATH.${NC}"
         exit 1
     fi
-    docker compose -f "${ROOT_DIR}/docker-compose.yml" up -d
+    docker compose -f "${ROOT_DIR}/docker-compose.yml" up -d --build
     echo -e "${GREEN}✓ Docker containers started.${NC}"
 else
     # Check if already running on the port
     if [ -f "${PID_FILE}" ]; then
         EXISTING_PID="$(cat "${PID_FILE}" 2>/dev/null || true)"
         if [ -n "${EXISTING_PID}" ] && kill -0 "${EXISTING_PID}" 2>/dev/null; then
-            echo -e "${YELLOW}Warning: DeskID is already running (PID: ${EXISTING_PID}).${NC}"
+            echo -e "${YELLOW}Warning: DeskID backend is already running (PID: ${EXISTING_PID}).${NC}"
             echo -e "Use ${BOLD}./stop_all.sh${NC} or ${BOLD}./restart_all.sh${NC} to restart."
             exit 0
         fi
@@ -186,8 +205,22 @@ else
         setsid python3 -m uvicorn deskid.app:app --host "${HOST}" --port "${PORT}" >> "${LOG_FILE}" 2>&1 < /dev/null &
         SERVER_PID=$!
         echo "${SERVER_PID}" > "${PID_FILE}"
-        echo -e "${GREEN}✓ Process launched in background (PID: ${SERVER_PID}).${NC}"
+        echo -e "${GREEN}✓ Backend process launched in background (PID: ${SERVER_PID}).${NC}"
         echo -e "  Logs: ${LOG_FILE}"
+    fi
+
+    # Optional: Start frontend Vite dev server with hot reload
+    if [ "${START_FRONTEND_DEV}" = true ] && [ -d "${ROOT_DIR}/frontend" ]; then
+        echo -e "\n${BLUE}Starting Vue 3 Vite development server...${NC}"
+        if command -v pnpm >/dev/null 2>&1; then
+            (cd "${ROOT_DIR}/frontend" && setsid pnpm run dev >> "${FRONTEND_LOG_FILE}" 2>&1 < /dev/null & echo $! > "${FRONTEND_PID_FILE}")
+        else
+            (cd "${ROOT_DIR}/frontend" && setsid npm run dev >> "${FRONTEND_LOG_FILE}" 2>&1 < /dev/null & echo $! > "${FRONTEND_PID_FILE}")
+        fi
+        FRONTEND_PID="$(cat "${FRONTEND_PID_FILE}" 2>/dev/null || true)"
+        echo -e "${GREEN}✓ Frontend dev server launched (PID: ${FRONTEND_PID}).${NC}"
+        echo -e "  Frontend Dev URL: http://localhost:5173"
+        echo -e "  Logs: ${FRONTEND_LOG_FILE}"
     fi
 fi
 
@@ -213,12 +246,13 @@ if [ "${READY}" = true ]; then
     echo -e "${BOLD}┌─────────────────────────────────────────────────────────────┐${NC}"
     echo -e "${BOLD}│                   Active Service Endpoints                  │${NC}"
     echo -e "${BOLD}├─────────────────────────────────────────────────────────────┤${NC}"
-    echo -e "│  ${CYAN}Public Auth UI:${NC}    http://${HOST}:${PORT}/auth"
-    echo -e "│  ${CYAN}Admin Console:${NC}     http://${HOST}:${PORT}/admin/console"
-    echo -e "│  ${CYAN}Developer Home:${NC}    http://${HOST}:${PORT}/"
-    echo -e "│  ${CYAN}OpenAPI Docs:${NC}      http://${HOST}:${PORT}/docs"
-    echo -e "│  ${CYAN}Health Check:${NC}      http://${HOST}:${PORT}/health"
-    echo -e "│  ${CYAN}JWKS Endpoint:${NC}     http://${HOST}:${PORT}/.well-known/jwks.json"
+    echo -e "│  ${CYAN}DeskID Identity Portal:${NC} http://${HOST}:${PORT}/portal"
+    echo -e "│  ${CYAN}Public Auth UI:${NC}       http://${HOST}:${PORT}/auth"
+    echo -e "│  ${CYAN}Admin Console:${NC}        http://${HOST}:${PORT}/admin/console"
+    echo -e "│  ${CYAN}Developer Home:${NC}       http://${HOST}:${PORT}/"
+    echo -e "│  ${CYAN}OpenAPI Docs:${NC}         http://${HOST}:${PORT}/docs"
+    echo -e "│  ${CYAN}Health Check:${NC}         http://${HOST}:${PORT}/health"
+    echo -e "│  ${CYAN}JWKS Endpoint:${NC}        http://${HOST}:${PORT}/.well-known/jwks.json"
     echo -e "${BOLD}└─────────────────────────────────────────────────────────────┘${NC}"
     echo -e "\nTo check service status:  ${BOLD}./scripts/status.sh${NC}"
     echo -e "To stop all services:     ${BOLD}./scripts/stop_all.sh${NC}"
