@@ -11,17 +11,25 @@ DeskID/
 │   ├── code_map.md               This file
 │   ├── product_onboarding.md     Downstream product & service onboarding guide
 │   └── user_onboarding.md        User & admin onboarding lifecycle guide
-├── gaps_enhancements.md      Current features and remaining gaps
-├── README.md                 Operator/developer README
-├── pyproject.toml            Package deskid 1.0.0; script deskid
-├── Dockerfile                python:3.12-slim, pip -e ".[postgres]", CMD deskid
-├── docker-compose.yml        postgres:16-alpine :5433 + auth :8090
-├── client.ts                 TypeScript SDK class DeskID
-├── .env.example              AUTH_* template
-├── .gitignore                .venv, .env, *.db — does NOT ignore *.pem
-├── src/deskid/               Service implementation
-├── tests/test_auth.py        80 pytest tests
-└── migrations/               SQL migrations & registry schemas
+├── packages/                     Client SDKs & drop-in UI components monorepo
+│   ├── core/                     Universal TS client & token management (@deskid/core)
+│   ├── react/                    React 18 & 19 provider, hooks & UI (@deskid/react)
+│   ├── vue/                      Vue 3 composables & components (@deskid/vue)
+│   ├── nextjs/                   Next.js Edge middleware & server SDK (@deskid/nextjs)
+│   └── README.md                 5-minute integration guide
+├── frontend/                     Modern Vue 3 SPA auth & admin portal
+├── adoption.md                   Adoption task roadmap & conversion strategy
+├── gaps_enhancements.md          Current features and remaining gaps
+├── README.md                     Operator/developer README
+├── pyproject.toml                Package deskid 1.0.0; script deskid
+├── Dockerfile                    python:3.12-slim, pip -e ".[postgres]", CMD deskid
+├── docker-compose.yml            postgres:16-alpine :5433 + auth :8090
+├── client.ts                     Legacy TypeScript SDK class DeskID
+├── .env.example                  AUTH_* template
+├── .gitignore                    .venv, .env, *.db — does NOT ignore *.pem
+├── src/deskid/                   Service implementation
+├── tests/test_auth.py            80 pytest tests
+└── migrations/                   SQL migrations & registry schemas
 ```
 
 Untracked local secrets often present: `private.pem`, `public.pem`, `.env`. Do not commit.
@@ -242,10 +250,20 @@ Covered: register/login/me/jwks, orgs/grants, OAuth unconfigured 501, introspect
 
 Not covered: OAuth happy path, PATCH me, change-password, session list/revoke, SDK, multi-worker rate limit, key rotation, org member edge cases.
 
-## SDK methods vs routes
+## SDK Monorepo (`packages/`)
 
-| SDK | Route | Present |
-|-----|-------|---------|
+The primary first-party SDK is organized as a monorepo in `packages/`:
+- **`@deskid/core`**: Zero-dependency universal client (`DeskIdClient`), token storage adapters (`LocalStorage`, `SessionStorage`, `Cookie`, `Memory`), automatic background token refresh, organization switching (`switchOrg`), and magic link/OTP verification.
+- **`@deskid/react`**: Drop-in `<DeskIdProvider>`, `<SignInButton />`, `<DeskIdModal />`, `<UserButton />`, and `useDeskId()`.
+- **`@deskid/vue`**: Vue 3 plugin `createDeskId()`, drop-in SFC components, and `useDeskId()`.
+- **`@deskid/nextjs`**: Edge-compatible route middleware (`deskIdAuthMiddleware`), server helpers (`getDeskIdSession()`, `getDeskIdUser()`, `getDeskIdClaims()`), and App Router client re-exports.
+
+### Legacy Single-File SDK (`client.ts`)
+
+The legacy root `client.ts` provides a basic fetch wrapper:
+
+| Method | Route | Present |
+|---|---|---|
 | `checkHealth` | `GET /health` | yes |
 | `register` | `POST /v1/auth/register` | yes |
 | `login` | `POST /v1/auth/login` | yes |
@@ -254,11 +272,6 @@ Not covered: OAuth happy path, PATCH me, change-password, session list/revoke, S
 | `verifyEmail` / `forgotPassword` / `resetPassword` | yes | yes |
 | `exportMyData` / `deleteMyAccount` | `/v1/me/*` | yes |
 | `listUsers` / `setGrant` / `queryAuditLog` | admin | yes |
-| — | `PATCH /v1/auth/me` | **missing** |
-| — | `POST /v1/auth/me/change-password` | **missing** |
-| — | sessions | **missing** |
-| — | orgs | **missing** |
-| — | `PATCH /v1/admin/users/{id}/active` | **missing** |
 
 ## Docker
 

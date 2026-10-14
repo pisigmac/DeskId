@@ -4,12 +4,16 @@ DeskID is a high-performance, product-agnostic authentication and identity micro
 
 ## Features
 
+- **Drop-in UI Components & Next.js SDK** (`@deskid/react`, `@deskid/vue`, `@deskid/nextjs`) for 5-minute integration
+- **Edge Auth Middleware** for Next.js App Router and Pages Router zero-boilerplate route protection
+- **Modern Vue 3 Auth & Admin Portal** (`frontend/`) with live password strength checklist and human-friendly error messages
+- **Passwordless Authentication** via Email Magic Links and One-Time Passcodes (OTP)
 - Email/password register & login with **email verification**
 - **Password reset** via Mail service
 - Google + GitHub OAuth
 - RS256 access tokens + refresh tokens (rotation + revocation)
 - Public JWKS (`/.well-known/jwks.json`) with deterministic key management
-- Orgs / memberships (`org_id` / `workspace_id` claims)
+- Orgs / memberships (`org_id` / `workspace_id` claims) and dynamic tenant switching
 - Product grants (`aud` + `roles.<product>`) — assigned per product, not baked into Auth
 - **Rate limiting** on login, register, and password-reset endpoints
 - **Immutable audit log** for all auth and admin events
@@ -41,6 +45,8 @@ OpenAPI: http://127.0.0.1:8090/docs
 
 ## Documentation & Guides
 
+- **[Client SDKs & Drop-in UI Guide (React, Vue, Next.js)](packages/README.md)**: 5-minute integration guide with `<SignInButton />`, `<DeskIdModal />`, `<UserButton />`, and Next.js Edge middleware.
+- **[Adoption Strategy & Task Roadmap](adoption.md)**: High-multiplier strategic roadmap (OIDC discovery, team invites, drop-in components, SAML SSO).
 - **[Downstream Product & Service Onboarding Guide](docs/product_onboarding.md)**: End-to-end integration walkthrough for connecting downstream services, registering custom roles, stateless JWKS validation, and reconciliation feed polling.
 - **[User Onboarding & Identity Lifecycle Guide](docs/user_onboarding.md)**: Complete guide covering platform admin bootstrapping, open vs closed registration modes, email verification, organization tenancy, and account management.
 
@@ -320,33 +326,63 @@ Rate limits are per process. Run a single replica or put a shared limiter in fro
 | POST | `/v1/admin/grants` | Bearer JWT + admin | Assign product grant |
 | GET | `/v1/admin/audit` | Bearer JWT + admin | Query audit log |
 
-## TypeScript SDK
+## Client SDKs & Drop-in UI Components
+
+DeskID provides official first-party packages in [`packages/`](packages/README.md):
+
+- **`@deskid/nextjs`**: Next.js 13/14/15 Edge middleware, server helpers (`getDeskIdSession()`), and App Router components.
+- **`@deskid/react`**: React 18 & 19 components (`<DeskIdProvider>`, `<SignInButton>`, `<DeskIdModal>`, `<UserButton>`) and `useDeskId()` hook.
+- **`@deskid/vue`**: Vue 3 Composition API plugin (`createDeskId`) and drop-in SFC components.
+- **`@deskid/core`**: Universal client (`DeskIdClient`), safe JWT claims decoding, auto token refresh, and pluggable storage adapters.
+
+### Next.js Edge Middleware (`middleware.ts`)
 
 ```typescript
-import { DeskID } from './client'
+import { deskIdAuthMiddleware } from '@deskid/nextjs/middleware'
 
-const auth = new DeskID({ baseUrl: 'http://127.0.0.1:8090' })
+export default deskIdAuthMiddleware({
+  publicRoutes: ['/', '/about', '/pricing', '/login'],
+  loginUrl: '/login'
+})
 
-// Auth flows
-await auth.register({ email, password })
-await auth.login({ email, password })
-await auth.refresh(refreshToken)
-await auth.logout(refreshToken)
-await auth.me(accessToken)
+export const config = {
+  matcher: ['/((?!.*\\..*|_next).*)', '/', '/(api|trpc)(.*)'],
+}
+```
 
-// Email / password management
-await auth.verifyEmail({ token })
-await auth.forgotPassword({ email })
-await auth.resetPassword({ token, password })
+### React Drop-in Components (`App.tsx`)
 
-// Self-service (GDPR)
-await auth.exportMyData(accessToken)
-await auth.deleteMyAccount(accessToken)
+```tsx
+import { DeskIdProvider, SignInButton, UserButton, useDeskId } from '@deskid/react'
 
-// Admin
-await auth.listUsers(accessToken)
-await auth.setGrant(accessToken, { user_id, audience, role })
-await auth.queryAuditLog(accessToken, { action: 'user.login', limit: 25 })
+export function App() {
+  return (
+    <DeskIdProvider baseUrl="https://auth.example.com" storage="cookie">
+      <Navbar />
+    </DeskIdProvider>
+  )
+}
+
+function Navbar() {
+  const { isAuthenticated } = useDeskId()
+  return (
+    <nav>
+      {isAuthenticated ? <UserButton showTenantSwitch={true} /> : <SignInButton mode="modal">Sign In</SignInButton>}
+    </nav>
+  )
+}
+```
+
+For full documentation and Vue 3 / Headless usage, see the **[SDK Monorepo Guide](packages/README.md)**.
+
+### Interactive Demo Application (`examples/react-demo`)
+
+An interactive React demonstration app is included in [`examples/react-demo`](examples/react-demo/README.md) showcasing live auth state, modal login, token decoding, and protected API simulation:
+
+```bash
+cd examples/react-demo
+pnpm run dev
+# Visit http://localhost:3000
 ```
 
 ## Running tests

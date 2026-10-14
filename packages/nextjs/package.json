@@ -1,0 +1,44 @@
+{
+  "name": "@deskid/nextjs",
+  "version": "1.0.0",
+  "description": "Next.js Authentication SDK & Middleware for DeskID (<SignInButton />, <DeskIdModal />, <UserButton />, deskIdAuthMiddleware, getDeskIdSession)",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./middleware": {
+      "types": "./dist/middleware.d.ts",
+      "import": "./dist/middleware.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@deskid/core": "workspace:*",
+    "@deskid/react": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
+    "typescript": "^5.7.2"
+  },
+  "keywords": ["deskid", "nextjs", "auth", "middleware", "react", "jwt", "oidc", "session"],
+  "license": "Apache-2.0"
+}

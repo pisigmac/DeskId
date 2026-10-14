@@ -11,14 +11,13 @@ from starlette.responses import Response
 
 _request_ctx: ContextVar[dict] = ContextVar("request_ctx", default={})
 
-# Security headers added to every response
-_SECURITY_HEADERS = {
+# Base security headers added to every response
+_BASE_SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "X-XSS-Protection": "1; mode=block",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
-    "Content-Security-Policy": "default-src 'none'",
 }
 
 
@@ -36,7 +35,35 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
         finally:
             _request_ctx.reset(token)
+
         response.headers["x-request-id"] = request_id
-        for header, value in _SECURITY_HEADERS.items():
+
+        # Apply base security headers
+        for header, value in _BASE_SECURITY_HEADERS.items():
             response.headers.setdefault(header, value)
+
+        # Context-aware Content-Security-Policy header
+        path = request.url.path
+        if path.startswith(("/docs", "/redoc", "/openapi.json")):
+            csp = (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+                "img-src 'self' data: https://fastapi.tiangolo.com https:; "
+                "font-src 'self' https://fonts.gstatic.com data:; "
+                "connect-src 'self'"
+            )
+        elif path.startswith(("/portal", "/auth", "/admin", "/assets")) or path == "/":
+            csp = (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                "img-src 'self' data: https:; "
+                "font-src 'self' https://fonts.gstatic.com data:; "
+                "connect-src 'self'"
+            )
+        else:
+            csp = "default-src 'none'"
+
+        response.headers.setdefault("Content-Security-Policy", csp)
         return response

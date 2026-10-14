@@ -1,0 +1,24 @@
+{
+  "name": "@deskid/vue",
+  "version": "1.0.0",
+  "description": "Drop-in Vue 3 authentication components (<SignInButton />, <DeskIdModal />, <UserButton />) and composables for DeskID",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@deskid/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "vue": "^3.3.0"
+  },
+  "keywords": ["deskid", "vue", "auth", "signin", "modal", "jwt", "oidc", "iam"],
+  "license": "Apache-2.0"
+}

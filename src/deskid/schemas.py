@@ -190,3 +190,18 @@ class ServiceOut(BaseModel):
     created_at: str
     updated_at: str
 
+
+# Passwordless Authentication & OTP (TASK-013)
+class MagicLinkRequest(BaseModel):
+    email: EmailStr
+
+
+class MagicLinkVerifyRequest(BaseModel):
+    token: str
+
+
+class OtpVerifyRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6)
+
+

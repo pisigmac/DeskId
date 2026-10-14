@@ -348,7 +348,46 @@ DeskID supports continuous cryptographic key rotation without service downtime:
 
 ---
 
-## 8. Pre-Flight Integration Checklist
+---
+
+## 8. Frontend & Full-Stack Application Integration
+
+For web frontend applications and full-stack frameworks (Next.js, React, Vue 3), DeskID provides drop-in SDKs in the [`packages/`](../packages/README.md) monorepo to authenticate users and obtain tokens:
+
+### A. Next.js App Router (`@deskid/nextjs`)
+Protect routes via Edge middleware and access session data in Server Components:
+
+```typescript
+// middleware.ts
+import { deskIdAuthMiddleware } from '@deskid/nextjs/middleware'
+
+export default deskIdAuthMiddleware({
+  publicRoutes: ['/', '/about', '/pricing', '/login'],
+  loginUrl: '/login'
+})
+```
+
+```tsx
+// app/dashboard/page.tsx
+import { getDeskIdSession } from '@deskid/nextjs/server'
+
+export default async function Dashboard() {
+  const session = await getDeskIdSession()
+  return <div>Welcome, {session?.user.display_name}!</div>
+}
+```
+
+### B. React & Vue 3 Drop-in UI
+Drop in pre-built UI components with zero styling overhead:
+- `<DeskIdProvider>`: Root context provider with auto-refresh timers.
+- `<SignInButton mode="modal">`: Triggers accessible sign-in modal with password and OTP magic link tabs.
+- `<UserButton showTenantSwitch={true}>`: Avatar dropdown with tenant switching and sign out.
+
+See the complete guide in **[packages/README.md](../packages/README.md)**.
+
+---
+
+## 9. Pre-Flight Integration Checklist
 
 Before promoting your integration to production, verify the following:
 
@@ -358,4 +397,6 @@ Before promoting your integration to production, verify the following:
 - [ ] Backend checks `iss`, `aud`, `exp`, and `claims["roles"][service_id]`.
 - [ ] Data queries partition by `claims["org_id"]` for multi-tenant isolation.
 - [ ] Tokens with missing or unexpected audience are rejected with `401/403`.
+- [ ] Frontend uses `@deskid/nextjs`, `@deskid/react`, or `@deskid/vue` for token lifecycle and session persistence.
 - [ ] Synchronization worker configured to consume `/v1/admin/reconciliation/events` (if maintaining local state).
+
