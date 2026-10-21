@@ -5,20 +5,28 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from deskid.config import get_settings
 from deskid.db import get_db
 from deskid.middleware import get_request_context
 from deskid.models import AuditLogEvent, ProductGrant, ServiceDefinition, User
 from deskid.routes.auth import current_user
 from deskid.schemas import (
     GrantRequest,
+    RoleCreateRequest,
     ServiceCreateRequest,
     ServiceOut,
     ServiceUpdateRequest,
     SetUserActiveRequest,
     UserOut,
+)
+from deskid.service_config import (
+    build_service_env_content,
+    build_service_json_content,
+    save_service_integration_files,
 )
 from deskid.services import emit_audit, set_user_active, user_to_out
 
@@ -27,6 +35,8 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 def service_to_out(svc: ServiceDefinition) -> dict:
+    settings = get_settings()
+    int_dir = getattr(settings, "integrations_dir", "integrations")
     return {
         "id": svc.id,
         "name": svc.name,
@@ -35,6 +45,10 @@ def service_to_out(svc: ServiceDefinition) -> dict:
         "default_role": svc.default_role,
         "created_at": svc.created_at.isoformat() if svc.created_at else "",
         "updated_at": svc.updated_at.isoformat() if svc.updated_at else "",
+        "integration_files": {
+            "env_path": f"{int_dir}/{svc.id}.env",
+            "json_path": f"{int_dir}/{svc.id}.json",
+        },
     }
 
 
@@ -300,6 +314,11 @@ def register_service(
     db.commit()
     db.refresh(svc)
 
+    try:
+        save_service_integration_files(svc)
+    except Exception as exc:
+        logger.warning("admin.register_service failed to write integration files for %s: %s", svc.id, exc)
+
     ctx = get_request_context()
     emit_audit(
         db,
@@ -350,6 +369,46 @@ def get_service(
     return service_to_out(svc)
 
 
+@router.get("/services/{service_id}/env")
+def get_service_env(
+    service_id: str,
+    _: User = Depends(require_platform_admin),
+    db: Session = Depends(get_db),
+):
+    svc = db.query(ServiceDefinition).filter(ServiceDefinition.id == service_id).one_or_none()
+    if not svc:
+        raise HTTPException(status_code=404, detail="Service not found")
+    settings = get_settings()
+    env_content = build_service_env_content(svc, settings)
+    return PlainTextResponse(
+        content=env_content,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{svc.id}.env"'},
+    )
+
+
+@router.get("/services/{service_id}/config")
+def get_service_config(
+    service_id: str,
+    _: User = Depends(require_platform_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    svc = db.query(ServiceDefinition).filter(ServiceDefinition.id == service_id).one_or_none()
+    if not svc:
+        raise HTTPException(status_code=404, detail="Service not found")
+    settings = get_settings()
+    int_dir = getattr(settings, "integrations_dir", "integrations")
+    return {
+        "service": service_to_out(svc),
+        "env_content": build_service_env_content(svc, settings),
+        "json_content": build_service_json_content(svc, settings),
+        "files": {
+            "env_path": f"{int_dir}/{svc.id}.env",
+            "json_path": f"{int_dir}/{svc.id}.json",
+        },
+    }
+
+
 @router.put("/services/{service_id}")
 def update_service(
     service_id: str,
@@ -380,6 +439,11 @@ def update_service(
 
     db.commit()
     db.refresh(svc)
+
+    try:
+        save_service_integration_files(svc)
+    except Exception as exc:
+        logger.warning("admin.update_service failed to write integration files for %s: %s", svc.id, exc)
 
     ctx = get_request_context()
     emit_audit(
@@ -423,4 +487,149 @@ def delete_service(
     )
     logger.info("admin.delete_service admin=%s service=%s", admin.id, service_id)
     return {"ok": True, "deleted": True, "service_id": service_id}
+
+
+# ---------------------------------------------------------------------------
+# Dedicated Roles & Permissions Management Endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/roles")
+def list_roles_overview(
+    service_id: str | None = Query(default=None),
+    _: User = Depends(require_platform_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    query = db.query(ServiceDefinition)
+    if service_id:
+        query = query.filter(ServiceDefinition.id == service_id)
+    services = query.order_by(ServiceDefinition.id).all()
+
+    grants = db.query(ProductGrant).join(User, ProductGrant.user_id == User.id).all()
+
+    roles_list = []
+    for svc in services:
+        allowed = svc.allowed_roles or []
+        for r in allowed:
+            matching_grants = [g for g in grants if g.audience == svc.id and g.role == r]
+            assigned_users = [
+                {
+                    "grant_id": g.id,
+                    "user_id": g.user_id,
+                    "email": g.user.email if g.user else "Unknown",
+                    "display_name": g.user.display_name if g.user else None,
+                    "org_id": g.org_id,
+                    "org_name": g.org.name if g.org else "Global (All Orgs)",
+                    "created_at": g.created_at.isoformat() if g.created_at else None,
+                }
+                for g in matching_grants
+            ]
+            roles_list.append({
+                "role": r,
+                "service_id": svc.id,
+                "service_name": svc.name,
+                "is_default": (r == svc.default_role),
+                "assigned_count": len(matching_grants),
+                "assigned_users": assigned_users,
+            })
+
+    total_assignments = sum(r["assigned_count"] for r in roles_list)
+    return {
+        "total_roles": len(roles_list),
+        "total_assignments": total_assignments,
+        "services_count": len(services),
+        "roles": roles_list,
+    }
+
+
+@router.post("/roles", status_code=201)
+def create_role(
+    body: RoleCreateRequest,
+    admin: User = Depends(require_platform_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    svc = db.query(ServiceDefinition).filter(ServiceDefinition.id == body.service_id).one_or_none()
+    if not svc:
+        raise HTTPException(status_code=404, detail=f"Service '{body.service_id}' not found")
+
+    clean_role = body.role.strip().lower()
+    if not clean_role:
+        raise HTTPException(status_code=422, detail="Role name cannot be empty")
+
+    current_roles = list(svc.allowed_roles or [])
+    if clean_role in current_roles:
+        raise HTTPException(status_code=409, detail=f"Role '{clean_role}' already exists in service '{svc.id}'")
+
+    current_roles.append(clean_role)
+    svc.allowed_roles = current_roles
+    if body.is_default or not svc.default_role:
+        svc.default_role = clean_role
+
+    db.commit()
+    db.refresh(svc)
+
+    try:
+        save_service_integration_files(svc)
+    except Exception as exc:
+        logger.warning("create_role failed to write integration files for %s: %s", svc.id, exc)
+
+    ctx = get_request_context()
+    emit_audit(
+        db,
+        action="admin.create_role",
+        actor_type="admin",
+        actor_id=admin.id,
+        resource_type="service_definition",
+        resource_id=svc.id,
+        ip_address=ctx.get("ip"),
+        user_agent=ctx.get("user_agent"),
+        details={"service_id": svc.id, "role": clean_role, "is_default": (svc.default_role == clean_role)},
+    )
+    return {"ok": True, "service_id": svc.id, "role": clean_role, "is_default": (svc.default_role == clean_role)}
+
+
+@router.delete("/roles")
+def delete_role(
+    service_id: str = Query(...),
+    role: str = Query(...),
+    admin: User = Depends(require_platform_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    svc = db.query(ServiceDefinition).filter(ServiceDefinition.id == service_id).one_or_none()
+    if not svc:
+        raise HTTPException(status_code=404, detail=f"Service '{service_id}' not found")
+
+    current_roles = list(svc.allowed_roles or [])
+    if role not in current_roles:
+        raise HTTPException(status_code=404, detail="Role not found in service")
+
+    if len(current_roles) == 1:
+        raise HTTPException(status_code=400, detail="Cannot delete the only allowed role in a service")
+
+    current_roles.remove(role)
+    svc.allowed_roles = current_roles
+    if svc.default_role == role:
+        svc.default_role = current_roles[0]
+
+    db.commit()
+    db.refresh(svc)
+
+    try:
+        save_service_integration_files(svc)
+    except Exception as exc:
+        logger.warning("delete_role failed to write integration files for %s: %s", svc.id, exc)
+
+    ctx = get_request_context()
+    emit_audit(
+        db,
+        action="admin.delete_role",
+        actor_type="admin",
+        actor_id=admin.id,
+        resource_type="service_definition",
+        resource_id=service_id,
+        ip_address=ctx.get("ip"),
+        user_agent=ctx.get("user_agent"),
+        details={"service_id": service_id, "role": role},
+    )
+    return {"ok": True, "deleted": True, "service_id": service_id, "role": role}
 

@@ -46,11 +46,15 @@ OpenAPI: http://127.0.0.1:8090/docs
 ## Documentation & Guides
 
 - **[Client SDKs & Drop-in UI Guide (React, Vue, Next.js)](packages/README.md)**: 5-minute integration guide with `<SignInButton />`, `<DeskIdModal />`, `<UserButton />`, and Next.js Edge middleware.
-- **[Adoption Strategy & Task Roadmap](adoption.md)**: High-multiplier strategic roadmap (OIDC discovery, team invites, drop-in components, SAML SSO).
+- **[Platform Team Showcase & OSS Walkthrough](docs/platform_showcase.md)**: 10-minute guide to spin up DeskID as the central IAM authority, configure services and multi-tenant orgs, and simulate stateless downstream integration.
+- **[Adoption Strategy & Task Roadmap](docs/adoption.md)**: High-multiplier strategic roadmap (OIDC discovery, team invites, drop-in components, SAML SSO).
 - **[Downstream Product & Service Onboarding Guide](docs/product_onboarding.md)**: End-to-end integration walkthrough for connecting downstream services, registering custom roles, stateless JWKS validation, and reconciliation feed polling.
 - **[User Onboarding & Identity Lifecycle Guide](docs/user_onboarding.md)**: Complete guide covering platform admin bootstrapping, open vs closed registration modes, email verification, organization tenancy, and account management.
 
 ## Integrate from another product
+
+> **Do downstream services need Docker or a proprietary SDK?**  
+> **No.** The DeskID Docker image is run only once, centrally by your platform / infrastructure team (e.g. at `https://auth.company.internal`). Downstream and 3rd-party services validate incoming RS256 JWTs statelessly using standard open-source libraries (`pyjwt`, `jsonwebtoken`, `golang-jwt`) against `/.well-known/jwks.json`. See the full walkthrough in **[docs/product_onboarding.md](docs/product_onboarding.md)**.
 
 1. Send users to Auth login API or OAuth start URLs
 2. Receive `access_token` (Bearer JWT)

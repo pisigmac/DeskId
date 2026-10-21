@@ -189,6 +189,13 @@ class ServiceOut(BaseModel):
     default_role: str | None = None
     created_at: str
     updated_at: str
+    integration_files: dict[str, str] | None = None
+
+
+class RoleCreateRequest(BaseModel):
+    service_id: str
+    role: str
+    is_default: bool = False
 
 
 # Passwordless Authentication & OTP (TASK-013)

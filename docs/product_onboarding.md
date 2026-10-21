@@ -19,7 +19,7 @@ DeskID is a product-agnostic, centralized identity control plane. Consumer and d
 sequenceDiagram
     autonumber
     actor User as Client Application
-    participant DeskID as DeskID (IAM)
+    participant DeskID as Central DeskID (IAM :8090)
     participant Svc as Downstream Service Backend
 
     Note over User,DeskID: 1. Service Registration & User Login
@@ -36,7 +36,80 @@ sequenceDiagram
 
 ---
 
-## 2. Step 1: Register Your Service & Custom Role Taxonomy
+## 2. Central Platform Deployment vs. Downstream Service Consumption
+
+A common question from engineers is: *"Do downstream or 3rd-party services need to download a DeskID Docker image or proprietary SDK?"*
+
+**No.** DeskID operates on a centralized, two-tier architecture:
+
+| Role | Runs Docker? | Needs DeskID SDK? | What they actually use |
+| :--- | :---: | :---: | :--- |
+| **Platform / Infra Team** | **Yes** (Centrally) | N/A | Runs `deskid` image once behind `https://auth.company.internal` |
+| **Downstream Backend API** | **No** | **No** | Standard open-source JWT/JWKS library (`pyjwt`, `jsonwebtoken`, `golang-jwt`) |
+| **Downstream Frontend App** | **No** | **Optional** | Optional `@deskid/react` UI components, or standard OAuth/login redirect |
+
+```mermaid
+flowchart TD
+    subgraph PlatformInfra["Platform Cloud / Infra (Deployed Once)"]
+        direction TB
+        CentralDeskID["DeskID Central Container<br>(:8090 / https://auth.company.internal)<br>• Issues RS256 JWTs<br>• Hosts JWKS & Admin Console<br>• Multi-Tenant RBAC"]
+        DB[("PostgreSQL<br>(User & Tenancy Store)")]
+        Redis[("Redis<br>(Rate Limiting & Sessions)")]
+        CentralDeskID --- DB
+        CentralDeskID --- Redis
+    end
+
+    JWKS["Public JWKS Key Registry<br>GET /.well-known/jwks.json"]
+    CentralDeskID -->|Publishes Public Keys| JWKS
+
+    subgraph SvcA["3rd-Party Service A (e.g., Billing API)"]
+        direction TB
+        BackendA["Backend API (Node.js / Express)"]
+        LibA["Standard Lib: jwks-rsa + jsonwebtoken<br>(NO DeskID Docker / NO DeskID SDK)"]
+        BackendA --- LibA
+    end
+
+    subgraph SvcB["3rd-Party Service B (e.g., Analytics Engine)"]
+        direction TB
+        BackendB["Backend API (Python / FastAPI)"]
+        LibB["Standard Lib: PyJWT<br>(NO DeskID Docker / NO DeskID SDK)"]
+        BackendB --- LibB
+    end
+
+    subgraph SvcC["3rd-Party Service C (e.g., Data Pipeline)"]
+        direction TB
+        BackendC["Backend API (Go)"]
+        LibC["Standard Lib: lestrrat-go/jwx<br>(NO DeskID Docker / NO DeskID SDK)"]
+        BackendC --- LibC
+    end
+
+    JWKS -.->|Periodic Fetch & Local Cache| LibA
+    JWKS -.->|Periodic Fetch & Local Cache| LibB
+    JWKS -.->|Periodic Fetch & Local Cache| LibC
+```
+
+### 2.1 For the Platform / Infra Team: Central Deployment Steps
+1. **Generate Cryptographic Keys (RS256):**
+   ```bash
+   openssl genpkey -algorithm RSA -out private.pem -pkeyopt rsa_keygen_bits:2048
+   openssl rsa -pubout -in private.pem -out public.pem
+   chmod 600 private.pem && chmod 644 public.pem
+   ```
+2. **Provision Core Environment:**
+   Set `AUTH_ISSUER=https://auth.company.internal`, `AUTH_DATABASE_URL`, `AUTH_RATE_LIMIT_REDIS_URL`, and point `AUTH_JWT_PRIVATE_KEY_FILE` / `AUTH_JWT_PUBLIC_KEY_FILE` to the generated keys.
+3. **Run Central Docker Image:**
+   Deploy the `deskid` container once in Kubernetes, AWS ECS, or Docker Compose behind an HTTPS reverse proxy (Nginx, Traefik, or ALB).
+4. **Register Services:**
+   Log into `https://auth.company.internal/admin` and register downstream service audiences (e.g. `analytics-engine`, `billing-api`) with their allowed role taxonomies.
+
+### 2.2 For Third-Party / Downstream Teams: Consumption Steps
+1. **Zero Infrastructure:** Do not run DeskID containers.
+2. **Configuration Hand-off:** Obtain the `AUTH_ISSUER` (`https://auth.company.internal`), `AUTH_JWKS_URL` (`https://auth.company.internal/.well-known/jwks.json`), and assigned `AUTH_AUDIENCE` ID from the platform team.
+3. **Local Validation:** Use standard JWT libraries in your language (see [Backend Implementation Examples](#6-backend-implementation-examples)) to validate incoming tokens locally without making round-trips to DeskID.
+
+---
+
+## 3. Step 1: Register Your Service & Custom Role Taxonomy
 
 Before your service can accept DeskID tokens, it must be registered in DeskID's **Service Registry**.
 
@@ -76,9 +149,20 @@ curl -X POST http://127.0.0.1:8090/v1/admin/services \
   "allowed_roles": ["admin", "analyst", "viewer"],
   "default_role": "viewer",
   "created_at": "2026-09-23T12:00:00Z",
-  "updated_at": "2026-09-23T12:00:00Z"
+  "updated_at": "2026-09-23T12:00:00Z",
+  "integration_files": {
+    "env_path": "integrations/analytics-engine.env",
+    "json_path": "integrations/analytics-engine.json"
+  }
 }
 ```
+
+> **Automated Client File Generation:**  
+> Whenever a service is registered or updated, DeskID automatically writes client integration files into `integrations/<service_id>.env` and `integrations/<service_id>.json`.  
+> Downstream teams can also fetch their configuration via API:
+> - `GET /v1/admin/services/{service_id}/env` (raw `.env` file download)
+> - `GET /v1/admin/services/{service_id}/config` (JSON configuration payload)
+> Or click **Client Config** in the Admin Portal to view, copy, or download the configuration.
 
 ### Option C: Using the TypeScript SDK
 ```typescript
@@ -97,7 +181,7 @@ const result = await auth.registerService(adminToken, {
 
 ---
 
-## 3. Step 2: Configure Grants & Global Access
+## 4. Step 2: Configure Grants & Global Access
 
 Users can only access your service if they hold a **Product Grant** for your service ID.
 
@@ -141,7 +225,7 @@ curl -X POST http://127.0.0.1:8090/v1/admin/grants \
 
 ---
 
-## 4. Step 3: Implement Stateless Backend Token Verification
+## 5. Step 3: Implement Stateless Backend Token Verification
 
 Your backend service must validate incoming JWTs locally without making round-trip network calls to DeskID.
 
@@ -176,7 +260,7 @@ Your backend service must validate incoming JWTs locally without making round-tr
 
 ---
 
-## 5. Backend Implementation Examples
+## 6. Backend Implementation Examples
 
 ### Python (FastAPI + PyJWT)
 
@@ -277,9 +361,74 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
 }
 ```
 
+### Go (Golang + `lestrrat-go/jwx/v2`)
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/lestrrat-go/jwx/v2/jwk"
+	"github.com/lestrrat-go/jwx/v2/jwt"
+)
+
+const (
+	jwksURL         = "https://auth.company.internal/.well-known/jwks.json"
+	expectedIssuer  = "https://auth.company.internal"
+	serviceAudience = "analytics-engine"
+)
+
+func AuthMiddleware(cache *jwk.Cache) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authHeader := r.Header.Get("Authorization")
+			if !strings.HasPrefix(authHeader, "Bearer ") {
+				http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
+				return
+			}
+			tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+
+			// Fetch public keys from local cache
+			set, err := cache.Get(r.Context(), jwksURL)
+			if err != nil {
+				http.Error(w, `{"error":"failed to fetch jwks"}`, http.StatusInternalServerError)
+				return
+			}
+
+			// Validate signature, issuer, audience, and exp statelessly
+			token, err := jwt.Parse([]byte(tokenStr),
+				jwt.WithKeySet(set),
+				jwt.WithValidate(true),
+				jwt.WithIssuer(expectedIssuer),
+				jwt.WithAudience(serviceAudience),
+			)
+			if err != nil {
+				http.Error(w, fmt.Sprintf(`{"error":"invalid token: %s"}`, err.Error()), http.StatusUnauthorized)
+				return
+			}
+
+			// Extract service roles
+			rolesClaim, _ := token.Get("roles")
+			rolesMap, ok := rolesClaim.(map[string]interface{})
+			if !ok || rolesMap[serviceAudience] == nil {
+				http.Error(w, `{"error":"insufficient service permissions"}`, http.StatusForbidden)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+```
+
 ---
 
-## 6. Step 4: Real-Time Synchronization via Reconciliation Feed
+## 7. Step 4: Real-Time Synchronization via Reconciliation Feed
 
 If your service caches local permissions, usernames, or tenant memberships, you must synchronize state changes using DeskID's **chronological reconciliation feed**.
 
@@ -334,9 +483,39 @@ GET /v1/admin/reconciliation/events?since_id=<last_processed_event_id>&limit=100
    - `user.delete`: Purge or anonymize user-owned resources (GDPR compliance).
    - `org.delete` / `org.remove_member`: Invalidate cached tenant sessions.
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Worker as Downstream Sync Worker
+    participant LocalDB as Local Service DB
+    participant DeskID as DeskID Reconciliation API
+
+    Note over Worker,LocalDB: 1. Read last processed checkpoint
+    Worker->>LocalDB: SELECT last_cursor FROM sync_checkpoints
+    LocalDB-->>Worker: last_cursor = "evt_0191c49b..."
+
+    Note over Worker,DeskID: 2. Fetch new chronological events
+    Worker->>DeskID: GET /v1/admin/reconciliation/events?since_id=evt_0191c49b...
+    DeskID-->>Worker: 200 OK: { events: [...], next_cursor: "evt_0191c49c...", has_more: false }
+
+    Note over Worker,LocalDB: 3. Apply state changes locally
+    loop For each event in events array
+        alt action == "admin.set_grant"
+            Worker->>LocalDB: UPDATE user_roles SET role = details.role
+        else action == "admin.suspend_user"
+            Worker->>LocalDB: UPDATE users SET is_active = false
+        else action == "user.delete"
+            Worker->>LocalDB: DELETE FROM users / anonymize PII
+        end
+    end
+
+    Note over Worker,LocalDB: 4. Advance cursor checkpoint
+    Worker->>LocalDB: UPDATE sync_checkpoints SET last_cursor = next_cursor
+```
+
 ---
 
-## 7. Zero-Downtime Key Rotation Runbook
+## 8. Zero-Downtime Key Rotation Runbook
 
 DeskID supports continuous cryptographic key rotation without service downtime:
 1. DeskID advertises both current and historical keys on `/.well-known/jwks.json`.
@@ -346,11 +525,38 @@ DeskID supports continuous cryptographic key rotation without service downtime:
    - Tokens signed by the previous key remain valid until their expiration (`exp`).
 3. Ensure your local JWKS cache has a minimum TTL of **5 minutes** or implements cache invalidation on unknown `kid`.
 
----
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as Platform Admin
+    participant DeskID as DeskID IAM (:8090)
+    participant Client as User / Client
+    participant Service as Downstream Service (JWKS Cache)
+
+    Note over Admin,DeskID: 1. Deploy New Key Pair (Key Rotation)
+    Admin->>DeskID: Rotate signing key to "kid-2" (retain "kid-1" in JWKS)
+    DeskID-->>DeskID: Signs new tokens with "kid-2"<br/>Serves both "kid-1" & "kid-2" at /.well-known/jwks.json
+
+    Note over Client,DeskID: 2. Client Authenticates
+    Client->>DeskID: POST /v1/auth/login
+    DeskID-->>Client: Returns JWT (header: kid="kid-2")
+
+    Note over Client,Service: 3. Downstream API Request
+    Client->>Service: GET /api/data (Authorization: Bearer <JWT kid-2>)
+
+    alt kid-2 is not in local JWKS cache
+        Service->>DeskID: Refresh GET /.well-known/jwks.json
+        DeskID-->>Service: 200 OK: [{kid: "kid-1"}, {kid: "kid-2"}]
+        Service->>Service: Update in-memory JWKS cache
+    end
+
+    Service->>Service: Validate RS256 signature using cached "kid-2" public key
+    Service-->>Client: 200 OK (Zero-Downtime Response)
+```
 
 ---
 
-## 8. Frontend & Full-Stack Application Integration
+## 9. Frontend & Full-Stack Application Integration
 
 For web frontend applications and full-stack frameworks (Next.js, React, Vue 3), DeskID provides drop-in SDKs in the [`packages/`](../packages/README.md) monorepo to authenticate users and obtain tokens:
 
@@ -387,7 +593,7 @@ See the complete guide in **[packages/README.md](../packages/README.md)**.
 
 ---
 
-## 9. Pre-Flight Integration Checklist
+## 10. Pre-Flight Integration Checklist
 
 Before promoting your integration to production, verify the following:
 

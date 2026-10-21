@@ -13,6 +13,31 @@
 | **`@deskid/vue`** | Vue 3 Composition API | `createDeskId`, `<DeskIdProvider />`, `<SignInButton />`, `<DeskIdModal />`, `<UserButton />`, `useDeskId` | ~6 KB |
 | **`@deskid/nextjs`** | Next.js 13, 14, 15 (App & Pages) | `deskIdAuthMiddleware`, `getDeskIdSession`, `getDeskIdUser`, Client UI Components | ~8 KB |
 
+```mermaid
+flowchart TD
+    subgraph AppRoot["Application Tree"]
+        Provider["&lt;DeskIdProvider baseUrl='...'&gt;<br>• Manages JWT & Session in Cookies/LocalStorage<br>• Background Token Refresh Timer<br>• Reactive Auth Context"]
+        
+        subgraph Components["Drop-in Components & Hooks"]
+            SignIn["&lt;SignInButton /&gt;<br>(Redirect or Modal Trigger)"]
+            Modal["&lt;DeskIdModal /&gt;<br>(Accessible Password + Magic Link UI)"]
+            UserBtn["&lt;UserButton /&gt;<br>(Avatar, Profile, Org Switcher)"]
+            Hook["useDeskId()<br>{ user, token, org, login, logout }"]
+        end
+        
+        Provider --> SignIn
+        Provider --> Modal
+        Provider --> UserBtn
+        Provider --> Hook
+    end
+
+    subgraph Backend["DeskID IAM Service (:8090)"]
+        DeskIdAPI["DeskID REST Engine<br>• /v1/auth/login<br>• /v1/auth/magic-link<br>• /v1/auth/refresh<br>• /v1/auth/switch-org"]
+    end
+
+    Provider <-->|REST Requests & RS256 Tokens| DeskIdAPI
+```
+
 ---
 
 ## 1. React Quickstart (`@deskid/react`)

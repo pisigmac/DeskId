@@ -137,6 +137,9 @@ class Settings(BaseSettings):
     account_lockout_max_attempts: int = 5
     account_lockout_duration_seconds: int = 900  # 15 minutes
 
+    # Service integration export directory.
+    integrations_dir: str = "integrations"
+
     @model_validator(mode="after")
     def _require_critical_settings(self) -> "Settings":
         """Fail closed if required runtime values are missing."""

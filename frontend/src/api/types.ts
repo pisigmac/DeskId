@@ -53,6 +53,20 @@ export interface ServiceDefinition {
   default_role?: string | null
   created_at: string
   updated_at: string
+  integration_files?: {
+    env_path: string
+    json_path: string
+  }
+}
+
+export interface ServiceConfigResponse {
+  service: ServiceDefinition
+  env_content: string
+  json_content: Record<string, any>
+  files: {
+    env_path: string
+    json_path: string
+  }
 }
 
 export interface ServiceCreatePayload {
@@ -68,6 +82,38 @@ export interface ServiceUpdatePayload {
   description?: string | null
   allowed_roles?: string[] | null
   default_role?: string | null
+}
+
+export interface RoleAssignedUser {
+  grant_id: string
+  user_id: string
+  email: string
+  display_name?: string | null
+  org_id?: string | null
+  org_name: string
+  created_at?: string | null
+}
+
+export interface RoleOverviewItem {
+  role: string
+  service_id: string
+  service_name: string
+  is_default: boolean
+  assigned_count: number
+  assigned_users: RoleAssignedUser[]
+}
+
+export interface RolesOverviewResponse {
+  total_roles: number
+  total_assignments: number
+  services_count: number
+  roles: RoleOverviewItem[]
+}
+
+export interface RoleCreatePayload {
+  service_id: string
+  role: string
+  is_default?: boolean
 }
 
 export interface AuditLogEvent {

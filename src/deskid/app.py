@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
 from deskid import __version__
 from deskid.config import get_settings
@@ -145,9 +145,13 @@ def create_app() -> FastAPI:
             return JSONResponse(status_code=404, content={"error": "sitemap.xml missing", "code": "HTTP_404"})
         return FileResponse(file_path, media_type="application/xml")
 
-    @app.get("/admin/console", include_in_schema=False)
-    def admin_console() -> FileResponse:
+    @app.get("/admin/console", include_in_schema=False, response_class=Response)
+    def admin_console() -> Response:
         from pathlib import Path
+
+        spa_index = Path(__file__).resolve().parents[2] / "frontend" / "dist" / "index.html"
+        if spa_index.is_file():
+            return RedirectResponse(url="/admin", status_code=302)
 
         page = Path(__file__).resolve().parents[2] / "static" / "admin.html"
         if not page.is_file():
@@ -233,6 +237,7 @@ def create_app() -> FastAPI:
         @app.get("/admin", include_in_schema=False)
         @app.get("/admin/users", include_in_schema=False)
         @app.get("/admin/organizations", include_in_schema=False)
+        @app.get("/admin/roles", include_in_schema=False)
         @app.get("/admin/grants", include_in_schema=False)
         @app.get("/admin/services", include_in_schema=False)
         @app.get("/admin/audit", include_in_schema=False)

@@ -1946,6 +1946,28 @@ def test_service_definition_crud(client):
     assert svc_data["name"] == "Service Alpha"
     assert svc_data["allowed_roles"] == ["catalog-admin", "schema-manager", "data-reader"]
     assert svc_data["default_role"] == "data-reader"
+    assert "integration_files" in svc_data
+    assert svc_data["integration_files"]["env_path"].endswith("service-alpha.env")
+    assert svc_data["integration_files"]["json_path"].endswith("service-alpha.json")
+
+    # Verify auto-generated files on disk
+    from pathlib import Path
+    assert Path(svc_data["integration_files"]["env_path"]).exists()
+    assert Path(svc_data["integration_files"]["json_path"]).exists()
+
+    # Verify /env and /config endpoints
+    env_resp = client.get("/v1/admin/services/service-alpha/env", headers=admin_headers)
+    assert env_resp.status_code == 200
+    assert "AUTH_MODE=deskid" in env_resp.text
+    assert "DESKID_AUDIENCE=service-alpha" in env_resp.text
+    assert "DESKID_DEFAULT_ROLE=data-reader" in env_resp.text
+
+    cfg_resp = client.get("/v1/admin/services/service-alpha/config", headers=admin_headers)
+    assert cfg_resp.status_code == 200
+    cfg_data = cfg_resp.json()
+    assert cfg_data["service"]["id"] == "service-alpha"
+    assert "AUTH_MODE=deskid" in cfg_data["env_content"]
+    assert cfg_data["json_content"]["audience"] == "service-alpha"
 
     # Duplicate registration returns 409
     dup_resp = client.post(
@@ -1992,6 +2014,49 @@ def test_service_definition_crud(client):
     # Confirm deletion
     get_del = client.get("/v1/admin/services/service-alpha", headers=admin_headers)
     assert get_del.status_code == 404
+
+
+def test_admin_roles_endpoints(client):
+    admin = client.post(
+        "/v1/auth/register",
+        json={"email": "rolesviewadmin@example.com", "password": "password123"},
+    ).json()
+    admin_headers = {"Authorization": f"Bearer {admin['access_token']}"}
+
+    # Register a test service
+    client.post(
+        "/v1/admin/services",
+        json={"id": "roles-test-svc", "name": "Roles Test Service", "allowed_roles": ["admin", "viewer"], "default_role": "viewer"},
+        headers=admin_headers,
+    )
+
+    # 1. List roles
+    res = client.get("/v1/admin/roles", headers=admin_headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert "roles" in data
+    assert any(r["service_id"] == "roles-test-svc" and r["role"] == "admin" for r in data["roles"])
+
+    # 2. Create a new custom role
+    create_res = client.post(
+        "/v1/admin/roles",
+        json={"service_id": "roles-test-svc", "role": "operator", "is_default": False},
+        headers=admin_headers,
+    )
+    assert create_res.status_code == 201
+    assert create_res.json()["role"] == "operator"
+
+    # Verify role was added
+    res_after = client.get("/v1/admin/roles?service_id=roles-test-svc", headers=admin_headers)
+    assert any(r["role"] == "operator" for r in res_after.json()["roles"])
+
+    # 3. Delete role
+    del_res = client.delete("/v1/admin/roles?service_id=roles-test-svc&role=operator", headers=admin_headers)
+    assert del_res.status_code == 200
+    assert del_res.json()["deleted"] is True
+
+    # Clean up
+    client.delete("/v1/admin/services/roles-test-svc", headers=admin_headers)
 
 
 def test_custom_roles_grant_validation_and_token_embedding(client):

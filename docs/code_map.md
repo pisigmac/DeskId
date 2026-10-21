@@ -9,8 +9,10 @@ DeskID/
 ├── docs/
 │   ├── AGENTS.md                 Agent context (read first)
 │   ├── code_map.md               This file
+│   ├── platform_showcase.md      Platform team showcase & OSS walkthrough guide
 │   ├── product_onboarding.md     Downstream product & service onboarding guide
-│   └── user_onboarding.md        User & admin onboarding lifecycle guide
+│   ├── user_onboarding.md        User & admin onboarding lifecycle guide
+│   └── adoption.md               Adoption task roadmap & conversion strategy
 ├── packages/                     Client SDKs & drop-in UI components monorepo
 │   ├── core/                     Universal TS client & token management (@deskid/core)
 │   ├── react/                    React 18 & 19 provider, hooks & UI (@deskid/react)
@@ -18,7 +20,6 @@ DeskID/
 │   ├── nextjs/                   Next.js Edge middleware & server SDK (@deskid/nextjs)
 │   └── README.md                 5-minute integration guide
 ├── frontend/                     Modern Vue 3 SPA auth & admin portal
-├── adoption.md                   Adoption task roadmap & conversion strategy
 ├── gaps_enhancements.md          Current features and remaining gaps
 ├── README.md                     Operator/developer README
 ├── pyproject.toml                Package deskid 1.0.0; script deskid

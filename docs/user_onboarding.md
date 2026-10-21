@@ -14,6 +14,59 @@ Every user account in DeskID is governed by a unified identity model:
 - **Product Grants:** Authorization is decoupled from user creation. Permissions across downstream applications are represented as **Product Grants** (`audience`, `role`, optional `org_id`).
 - **Email Verification & Account Security:** Configurable account lockout, email verification gating, and single-use refresh token rotation.
 
+### User Account Security & Lifecycle State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Registered: POST /v1/auth/register
+    Registered --> VerificationPending: AUTH_REQUIRE_EMAIL_VERIFICATION = true
+    Registered --> Active: Verification disabled
+    VerificationPending --> Active: POST /v1/auth/verify-email
+    Active --> Locked: 5 Failed Password Attempts (Lockout)
+    Locked --> Active: 15-minute window expires or Password Reset
+    Active --> Suspended: Admin PATCH /v1/admin/users/:id/active (is_active=false)
+    Suspended --> Active: Admin PATCH /v1/admin/users/:id/active (is_active=true)
+    Active --> Deleted: POST /v1/me/delete (GDPR erasure)
+    Suspended --> Deleted: User / Admin Purge
+    Deleted --> [*]
+```
+
+### Multi-Tenant & Product Grant Relationship Model
+
+```mermaid
+erDiagram
+    USER ||--o{ ORG_MEMBERSHIP : "belongs to"
+    ORGANIZATION ||--o{ ORG_MEMBERSHIP : "has members"
+    USER ||--o{ PRODUCT_GRANT : "holds global grants"
+    ORGANIZATION ||--o{ PRODUCT_GRANT : "holds tenant grants"
+    SERVICE_REGISTRY ||--o{ PRODUCT_GRANT : "defines taxonomy"
+
+    USER {
+        uuid id PK
+        string email
+        boolean is_platform_admin
+        boolean is_active
+        uuid personal_org_id
+    }
+    ORGANIZATION {
+        uuid id PK
+        string name
+        string slug
+    }
+    PRODUCT_GRANT {
+        uuid id PK
+        string audience
+        string role
+        uuid org_id "Nullable (Null = Global)"
+    }
+    SERVICE_REGISTRY {
+        string id PK
+        string name
+        string allowed_roles
+        string default_role
+    }
+```
+
 ---
 
 ## 2. Bootstrapping: Onboarding the First Platform Admin

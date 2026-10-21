@@ -7,6 +7,7 @@ import {
   Building2,
   KeyRound,
   Server,
+  ShieldAlert,
   ShieldCheck,
   UserCheck,
   Laptop,
@@ -33,6 +34,7 @@ const adminNavItems: NavItem[] = [
   { label: 'Platform Dashboard', to: { name: 'admin-dashboard' }, icon: LayoutDashboard },
   { label: 'User Directory', to: { name: 'admin-users' }, icon: Users },
   { label: 'Organizations & Tenancy', to: { name: 'admin-organizations' }, icon: Building2 },
+  { label: 'Roles & Permissions', to: { name: 'admin-roles' }, icon: ShieldAlert },
   { label: 'Product Grants', to: { name: 'admin-grants' }, icon: KeyRound },
   { label: 'Service Registry', to: { name: 'admin-services' }, icon: Server },
   { label: 'Audit Log Stream', to: { name: 'admin-audit' }, icon: ShieldCheck }

@@ -48,6 +48,7 @@ backlog.d/
 # Node / Frontend / SDKs
 node_modules/
 **/node_modules/
+integrations/
 dist/
 **/dist/
 

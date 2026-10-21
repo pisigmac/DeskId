@@ -5,6 +5,9 @@ import type {
   OrgMembersResponse,
   ReconciliationResponse,
   RegisterResponse,
+  RoleCreatePayload,
+  RolesOverviewResponse,
+  ServiceConfigResponse,
   ServiceCreatePayload,
   ServiceDefinition,
   ServiceListResponse,
@@ -403,6 +406,10 @@ class ApiClient {
     return this.request<ServiceDefinition>(`/v1/admin/services/${serviceId}`)
   }
 
+  async getServiceConfig(serviceId: string): Promise<ServiceConfigResponse> {
+    return this.request<ServiceConfigResponse>(`/v1/admin/services/${serviceId}/config`)
+  }
+
   async createService(payload: ServiceCreatePayload): Promise<ServiceDefinition> {
     return this.request<ServiceDefinition>('/v1/admin/services', {
       method: 'POST',
@@ -419,6 +426,25 @@ class ApiClient {
 
   async deleteService(serviceId: string): Promise<{ ok: boolean; deleted: boolean; service_id: string }> {
     return this.request(`/v1/admin/services/${serviceId}`, {
+      method: 'DELETE'
+    })
+  }
+
+  // --- Roles & Permissions Overview ---
+  async listRoles(serviceId?: string): Promise<RolesOverviewResponse> {
+    const query = serviceId ? `?service_id=${encodeURIComponent(serviceId)}` : ''
+    return this.request<RolesOverviewResponse>(`/v1/admin/roles${query}`)
+  }
+
+  async createRole(payload: RoleCreatePayload): Promise<any> {
+    return this.request('/v1/admin/roles', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+  }
+
+  async deleteRole(serviceId: string, role: string): Promise<any> {
+    return this.request(`/v1/admin/roles?service_id=${encodeURIComponent(serviceId)}&role=${encodeURIComponent(role)}`, {
       method: 'DELETE'
     })
   }
